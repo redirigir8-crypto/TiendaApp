@@ -5,7 +5,7 @@ const { Pool } = require('pg');
 const url = process.env.DATABASE_URL;
 const pool = new Pool({
   connectionString: url,
-  ssl: url.includes('render.com') ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
 });
 
 const app = express();
