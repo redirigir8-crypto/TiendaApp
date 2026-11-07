@@ -1,18 +1,15 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Stack } from 'expo-router';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+// Pantallas de la app:
+//  index   -> iniciar sesión / registrarse
+//  tienda  -> catálogo de bicicletas + carrito
+//  compras -> mis compras y facturas
+export default function Layout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <Stack screenOptions={{ headerStyle: { backgroundColor: '#1e6fd9' }, headerTintColor: 'white' }}>
+      <Stack.Screen name="index" options={{ title: 'Iniciar sesión' }} />
+      <Stack.Screen name="tienda" options={{ title: 'Tienda de Bicicletas', headerBackVisible: false }} />
+      <Stack.Screen name="compras" options={{ title: 'Mis compras' }} />
+    </Stack>
   );
 }
