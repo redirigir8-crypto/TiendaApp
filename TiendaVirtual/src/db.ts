@@ -2,6 +2,7 @@
 //  Datos de la app: backend (Render) + respaldo SQLite
 // =============================================
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
 
 // URL del backend en Render
 export const API = 'https://tiendaapp-9xc4.onrender.com';
@@ -12,24 +13,45 @@ export type Producto = {
   precio: number;
   descripcion?: string;
   imagen?: string;
+  imagenes?: string[]; // varias fotos de la bicicleta
+  stock: number;
 };
+
+// Lista de fotos del producto (la primera es la portada)
+export function fotosDe(p: Producto): string[] {
+  if (p.imagenes && p.imagenes.length > 0) return p.imagenes;
+  return p.imagen ? [p.imagen] : [];
+}
 export type ItemCarrito = Producto & { cantidad: number };
 export type Usuario = { id: number; nombre: string; email: string };
-export type Venta = {
-  id: number | string;
+
+// Datos de una compra (lo que se manda al servidor)
+export type DatosCompra = {
   items: ItemCarrito[];
+  subtotal: number;
+  iva: number;
+  envio: number;
   total: number;
+  direccion: string; // vacío = recoge en tienda
+  metodo_pago: string; // ej: "Tarjeta **** 1234", "Nequi 300...", "Transferencia"
+};
+export type Venta = DatosCompra & {
+  id: number | string;
   fecha: string;
   pendiente?: boolean; // true = guardada en el celular, sin enviar
 };
 
-const db = SQLite.openDatabaseSync('tienda.db');
+// Error que devuelve el servidor (ej: "sin stock"). Se distingue de "no hay internet".
+class ErrorServidor extends Error {}
 
-db.execSync(`
-  CREATE TABLE IF NOT EXISTS productos (
-    id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, descripcion TEXT, imagen TEXT);
-  CREATE TABLE IF NOT EXISTS ventas_pendientes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, items TEXT, total REAL, fecha TEXT);
+// SQLite solo se usa en el celular. En el navegador la app funciona solo con internet.
+const db = Platform.OS === 'web' ? null : SQLite.openDatabaseSync('tienda.db');
+let sesionWeb: Usuario | null = null; // sesión en memoria cuando es web
+
+db?.execSync(`
+  CREATE TABLE IF NOT EXISTS productos_cache (id INTEGER PRIMARY KEY, datos TEXT);
+  CREATE TABLE IF NOT EXISTS compras_pendientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, datos TEXT, fecha TEXT);
   CREATE TABLE IF NOT EXISTS sesion (
     id INTEGER PRIMARY KEY, nombre TEXT, email TEXT);
 `);
@@ -42,16 +64,32 @@ async function post(ruta: string, cuerpo: object) {
     body: JSON.stringify(cuerpo),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Error del servidor');
+  if (!res.ok) throw new ErrorServidor(data.error || 'Error del servidor');
   return data;
 }
 
+// Convierte los números que llegan de Postgres como texto
+const aVenta = (v: any): Venta => ({
+  ...v,
+  subtotal: Number(v.subtotal ?? v.total),
+  iva: Number(v.iva ?? 0),
+  envio: Number(v.envio ?? 0),
+  total: Number(v.total),
+  direccion: v.direccion ?? '',
+  metodo_pago: v.metodo_pago ?? '',
+});
+
 // ---------- Sesión ----------
 export function usuarioGuardado() {
+  if (!db) return sesionWeb;
   return db.getFirstSync<Usuario>('SELECT * FROM sesion');
 }
 
 function guardarSesion(u: Usuario) {
+  if (!db) {
+    sesionWeb = u;
+    return;
+  }
   db.runSync('DELETE FROM sesion');
   db.runSync('INSERT INTO sesion (id, nombre, email) VALUES (?, ?, ?)', [u.id, u.nombre, u.email]);
 }
@@ -69,7 +107,8 @@ export async function registro(nombre: string, email: string, password: string) 
 }
 
 export function cerrarSesion() {
-  db.runSync('DELETE FROM sesion');
+  sesionWeb = null;
+  db?.runSync('DELETE FROM sesion');
 }
 
 // ---------- Productos ----------
@@ -78,45 +117,54 @@ export function cerrarSesion() {
 export async function cargarProductos(): Promise<Producto[]> {
   try {
     const res = await fetch(API + '/productos');
-    const data: Producto[] = await res.json();
-    db.runSync('DELETE FROM productos');
+    const data: Producto[] = (await res.json()).map((p: any) => ({
+      ...p,
+      precio: Number(p.precio),
+      stock: Number(p.stock ?? 0),
+    }));
+    if (!db) return data;
+    db.runSync('DELETE FROM productos_cache');
     for (const p of data) {
-      db.runSync('INSERT INTO productos VALUES (?, ?, ?, ?, ?)', [
-        p.id, p.nombre, Number(p.precio), p.descripcion ?? '', p.imagen ?? '',
-      ]);
+      db.runSync('INSERT INTO productos_cache (id, datos) VALUES (?, ?)', [p.id, JSON.stringify(p)]);
     }
+    return data;
   } catch {
     console.log('Sin internet: usando productos guardados');
   }
-  return db.getAllSync<Producto>('SELECT * FROM productos ORDER BY id');
+  if (!db) return [];
+  return db
+    .getAllSync<{ datos: string }>('SELECT datos FROM productos_cache ORDER BY id')
+    .map((f) => JSON.parse(f.datos));
 }
 
 // ---------- Ventas ----------
 // Intenta enviar la compra. Si no hay internet, la guarda en el celular.
-export async function comprar(usuario: Usuario, items: ItemCarrito[], total: number): Promise<Venta> {
+// Si el servidor la rechaza (ej: sin stock), lanza el error para mostrarlo.
+export async function comprar(usuario: Usuario, compra: DatosCompra): Promise<Venta> {
   try {
-    const v = await post('/ventas', { items, total, usuario_id: usuario.id, cliente: usuario.nombre });
-    return { ...v, total: Number(v.total) };
-  } catch {
+    const v = await post('/ventas', { ...compra, usuario_id: usuario.id, cliente: usuario.nombre });
+    return aVenta(v);
+  } catch (e) {
+    if (e instanceof ErrorServidor || !db) throw e;
     const fecha = new Date().toISOString();
-    const r = db.runSync('INSERT INTO ventas_pendientes (items, total, fecha) VALUES (?, ?, ?)', [
-      JSON.stringify(items), total, fecha,
+    const r = db.runSync('INSERT INTO compras_pendientes (datos, fecha) VALUES (?, ?)', [
+      JSON.stringify(compra), fecha,
     ]);
-    return { id: 'P' + r.lastInsertRowId, items, total, fecha, pendiente: true };
+    return { ...compra, id: 'P' + r.lastInsertRowId, fecha, pendiente: true };
   }
 }
 
 // Envía las compras que quedaron guardadas sin internet
 export async function sincronizar(usuario: Usuario) {
-  const pendientes = db.getAllSync<any>('SELECT * FROM ventas_pendientes');
-  for (const v of pendientes) {
+  if (!db) return;
+  const pendientes = db.getAllSync<any>('SELECT * FROM compras_pendientes');
+  for (const p of pendientes) {
     try {
-      await post('/ventas', {
-        items: JSON.parse(v.items), total: v.total, usuario_id: usuario.id, cliente: usuario.nombre,
-      });
-      db.runSync('DELETE FROM ventas_pendientes WHERE id = ?', [v.id]);
-    } catch {
-      break; // sigue sin internet
+      await post('/ventas', { ...JSON.parse(p.datos), usuario_id: usuario.id, cliente: usuario.nombre });
+      db.runSync('DELETE FROM compras_pendientes WHERE id = ?', [p.id]);
+    } catch (e) {
+      if (!(e instanceof ErrorServidor)) break; // sigue sin internet
+      // si el servidor la rechaza (ej: sin stock) se queda pendiente y sigue con la siguiente
     }
   }
 }
@@ -127,12 +175,13 @@ export async function misCompras(usuario: Usuario): Promise<Venta[]> {
   try {
     await sincronizar(usuario);
     const res = await fetch(API + '/ventas/usuario/' + usuario.id);
-    delServidor = (await res.json()).map((v: any) => ({ ...v, total: Number(v.total) }));
+    delServidor = (await res.json()).map(aVenta);
   } catch {
     console.log('Sin internet: solo compras pendientes');
   }
+  if (!db) return delServidor;
   const pendientes: Venta[] = db
-    .getAllSync<any>('SELECT * FROM ventas_pendientes ORDER BY id DESC')
-    .map((v) => ({ id: 'P' + v.id, items: JSON.parse(v.items), total: v.total, fecha: v.fecha, pendiente: true }));
+    .getAllSync<any>('SELECT * FROM compras_pendientes ORDER BY id DESC')
+    .map((p) => ({ ...JSON.parse(p.datos), id: 'P' + p.id, fecha: p.fecha, pendiente: true }));
   return [...pendientes, ...delServidor];
 }

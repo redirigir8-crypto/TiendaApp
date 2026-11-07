@@ -3,7 +3,12 @@ import { useEffect, useState } from 'react';
 // URL del backend en Render
 const API = 'https://tiendaapp-9xc4.onrender.com';
 
-const formVacio = { nombre: '', precio: '', descripcion: '', imagen: '' };
+// "imagenes" es un texto con una URL por línea (cada línea = una foto)
+const formVacio = { nombre: '', precio: '', stock: '', descripcion: '', imagenes: '' };
+
+// Lista de fotos de un producto (compatible con productos viejos que solo tienen "imagen")
+const fotosDe = (p) => (p.imagenes && p.imagenes.length ? p.imagenes : p.imagen ? [p.imagen] : []);
+const pesos = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 
 export default function App() {
   const [clave, setClave] = useState(localStorage.getItem('clave') || '');
@@ -49,7 +54,12 @@ export default function App() {
 
   const guardar = async (e) => {
     e.preventDefault();
-    const datos = { ...form, precio: Number(form.precio) };
+    const datos = {
+      ...form,
+      precio: Number(form.precio),
+      stock: Number(form.stock),
+      imagenes: form.imagenes.split('\n').map((u) => u.trim()).filter(Boolean),
+    };
     if (editandoId) await pedir('/productos/' + editandoId, 'PUT', datos);
     else await pedir('/productos', 'POST', datos);
     setForm(formVacio);
@@ -62,8 +72,9 @@ export default function App() {
     setForm({
       nombre: p.nombre,
       precio: p.precio,
+      stock: p.stock ?? 0,
       descripcion: p.descripcion || '',
-      imagen: p.imagen || '',
+      imagenes: fotosDe(p).join('\n'),
     });
   };
 
@@ -108,9 +119,16 @@ export default function App() {
           <form className="tarjeta" onSubmit={guardar}>
             <h3>{editandoId ? 'Editar bicicleta' : 'Nueva bicicleta'}</h3>
             <input placeholder="Nombre" value={form.nombre} onChange={cambiar('nombre')} required />
-            <input placeholder="Precio" type="number" value={form.precio} onChange={cambiar('precio')} required />
+            <input placeholder="Precio (sin IVA)" type="number" value={form.precio} onChange={cambiar('precio')} required />
+            <input placeholder="Stock (unidades disponibles)" type="number" value={form.stock} onChange={cambiar('stock')} required />
             <textarea placeholder="Descripción" value={form.descripcion} onChange={cambiar('descripcion')} />
-            <input placeholder="URL de la imagen (opcional)" value={form.imagen} onChange={cambiar('imagen')} />
+            <label>Fotos: pega una URL por línea (la primera es la portada)</label>
+            <textarea rows={4} placeholder={'https://...foto-frente.jpg\nhttps://...foto-lado.jpg'} value={form.imagenes} onChange={cambiar('imagenes')} />
+            <div className="fotos">
+              {form.imagenes.split('\n').filter((u) => u.trim()).map((u) => (
+                <img key={u} className="mini" src={u.trim()} />
+              ))}
+            </div>
             <button>{editandoId ? 'Guardar cambios' : 'Publicar'}</button>
             {editandoId && (
               <button type="button" className="gris" onClick={() => { setEditandoId(null); setForm(formVacio); }}>
@@ -123,14 +141,18 @@ export default function App() {
             <h3>Productos publicados</h3>
             <table>
               <thead>
-                <tr><th>Imagen</th><th>Nombre</th><th>Precio</th><th></th></tr>
+                <tr><th>Fotos</th><th>Nombre</th><th>Precio</th><th>Stock</th><th></th></tr>
               </thead>
               <tbody>
                 {productos.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.imagen ? <img className="mini" src={p.imagen} /> : '🚲'}</td>
+                    <td>
+                      {fotosDe(p).length ? <img className="mini" src={fotosDe(p)[0]} /> : '🚲'}
+                      {fotosDe(p).length > 1 && <small> +{fotosDe(p).length - 1}</small>}
+                    </td>
                     <td>{p.nombre}</td>
-                    <td>${Number(p.precio).toLocaleString('es-CO')}</td>
+                    <td>{pesos(p.precio)}</td>
+                    <td style={{ color: p.stock > 0 ? 'green' : 'red' }}>{p.stock > 0 ? p.stock : 'Agotado'}</td>
                     <td>
                       <button onClick={() => editar(p)}>Editar</button>
                       <button className="rojo" onClick={() => eliminar(p.id)}>Eliminar</button>
@@ -148,7 +170,7 @@ export default function App() {
           <h3>Ventas</h3>
           <table>
             <thead>
-              <tr><th>#</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Fecha</th></tr>
+              <tr><th>#</th><th>Cliente</th><th>Productos</th><th>Pago</th><th>Entrega</th><th>IVA</th><th>Total</th><th>Fecha</th></tr>
             </thead>
             <tbody>
               {ventas.map((v) => (
@@ -156,7 +178,10 @@ export default function App() {
                   <td>{v.id}</td>
                   <td>{v.cliente || '-'}</td>
                   <td>{(v.items || []).map((i) => `${i.cantidad || 1}x ${i.nombre}`).join(', ')}</td>
-                  <td>${Number(v.total).toLocaleString('es-CO')}</td>
+                  <td>{v.metodo_pago || '-'}</td>
+                  <td>{v.direccion ? 'Domicilio: ' + v.direccion : 'Tienda'}</td>
+                  <td>{pesos(v.iva)}</td>
+                  <td><b>{pesos(v.total)}</b></td>
                   <td>{new Date(v.fecha).toLocaleString('es-CO')}</td>
                 </tr>
               ))}

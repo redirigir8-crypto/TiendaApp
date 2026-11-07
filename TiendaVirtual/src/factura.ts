@@ -1,7 +1,9 @@
 // =============================================
 //  Factura en PDF (expo-print crea el PDF, expo-sharing lo guarda/comparte)
 // =============================================
+import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
+import { Platform } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import type { Usuario, Venta } from './db';
 
@@ -33,11 +35,29 @@ export async function descargarFactura(venta: Venta, usuario: Usuario) {
         </tr>
         ${filas}
       </table>
-      <h2 style="text-align:right;">Total: ${pesos(venta.total)}</h2>
+      <p><b>Medio de pago:</b> ${venta.metodo_pago}</p>
+      <p><b>Entrega:</b> ${venta.direccion ? 'Domicilio: ' + venta.direccion : 'Recoger en tienda'}</p>
+      <table cellpadding="6" style="margin-left:auto; margin-top: 16px;">
+        <tr><td>Subtotal:</td><td align="right">${pesos(venta.subtotal)}</td></tr>
+        <tr><td>IVA (19%):</td><td align="right">${pesos(venta.iva)}</td></tr>
+        <tr><td>Envío:</td><td align="right">${venta.envio ? pesos(venta.envio) : 'Gratis'}</td></tr>
+        <tr><td><h2>Total:</h2></td><td align="right"><h2>${pesos(venta.total)}</h2></td></tr>
+      </table>
       <p>¡Gracias por su compra!</p>
     </body>
   </html>`;
 
-  const { uri } = await Print.printToFileAsync({ html });
-  await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
+  // En el navegador: abre la ventana de imprimir (elegir "Guardar como PDF")
+  if (Platform.OS === 'web') {
+    await Print.printAsync({ html });
+    return;
+  }
+
+  // En el celular: crea el PDF, lo guarda con nombre "factura-N.pdf" y lo comparte/descarga
+  const { base64 } = await Print.printToFileAsync({ html, base64: true });
+  const archivo = new File(Paths.cache, `factura-${venta.id}.pdf`);
+  if (archivo.exists) archivo.delete();
+  archivo.create();
+  archivo.write(base64 ?? '', { encoding: 'base64' });
+  await Sharing.shareAsync(archivo.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
 }

@@ -42,3 +42,5 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; }
 img.mini { width: 60px; height: 45px; object-fit: cover; border-radius: 4px; }
 .pestanas button { background: #ccc; color: #222; }
 .pestanas button.activa { background: #1e6fd9; color: white; }
+label { font-size: 13px; color: #555; }
+.fotos { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }

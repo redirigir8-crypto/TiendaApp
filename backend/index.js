@@ -31,12 +31,19 @@ async function init() {
       id SERIAL PRIMARY KEY, nombre TEXT, precio NUMERIC);
     ALTER TABLE productos ADD COLUMN IF NOT EXISTS descripcion TEXT;
     ALTER TABLE productos ADD COLUMN IF NOT EXISTS imagen TEXT;
+    ALTER TABLE productos ADD COLUMN IF NOT EXISTS stock INTEGER DEFAULT 10;
+    ALTER TABLE productos ADD COLUMN IF NOT EXISTS imagenes JSONB DEFAULT '[]';
 
     CREATE TABLE IF NOT EXISTS ventas (
       id SERIAL PRIMARY KEY, items JSONB, total NUMERIC,
       fecha TIMESTAMP DEFAULT NOW());
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS usuario_id INTEGER;
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS cliente TEXT;
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS subtotal NUMERIC;
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS iva NUMERIC;
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS envio NUMERIC;
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS direccion TEXT;
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;
   `);
 
   // Quitar los productos de prueba viejos (arroz, leche, pan)
@@ -98,20 +105,21 @@ app.get('/productos', async (req, res) => {
   res.json(rows);
 });
 
+// imagenes = lista de URLs (varias fotos de la bicicleta). La primera es la portada.
 app.post('/productos', soloAdmin, async (req, res) => {
-  const { nombre, precio, descripcion, imagen } = req.body;
+  const { nombre, precio, descripcion, stock, imagenes = [] } = req.body;
   const { rows } = await pool.query(
-    'INSERT INTO productos (nombre, precio, descripcion, imagen) VALUES ($1, $2, $3, $4) RETURNING *',
-    [nombre, precio, descripcion, imagen]
+    'INSERT INTO productos (nombre, precio, descripcion, imagen, imagenes, stock) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+    [nombre, precio, descripcion, imagenes[0] || null, JSON.stringify(imagenes), stock]
   );
   res.json(rows[0]);
 });
 
 app.put('/productos/:id', soloAdmin, async (req, res) => {
-  const { nombre, precio, descripcion, imagen } = req.body;
+  const { nombre, precio, descripcion, stock, imagenes = [] } = req.body;
   const { rows } = await pool.query(
-    'UPDATE productos SET nombre=$1, precio=$2, descripcion=$3, imagen=$4 WHERE id=$5 RETURNING *',
-    [nombre, precio, descripcion, imagen, req.params.id]
+    'UPDATE productos SET nombre=$1, precio=$2, descripcion=$3, imagen=$4, imagenes=$5, stock=$6 WHERE id=$7 RETURNING *',
+    [nombre, precio, descripcion, imagenes[0] || null, JSON.stringify(imagenes), stock, req.params.id]
   );
   res.json(rows[0]);
 });
@@ -122,13 +130,32 @@ app.delete('/productos/:id', soloAdmin, async (req, res) => {
 });
 
 // ---------- Ventas ----------
+// Registra la compra y descuenta el stock (todo o nada, con una transacción)
 app.post('/ventas', async (req, res) => {
-  const { items, total, usuario_id, cliente } = req.body;
-  const { rows } = await pool.query(
-    'INSERT INTO ventas (items, total, usuario_id, cliente) VALUES ($1, $2, $3, $4) RETURNING *',
-    [JSON.stringify(items), total, usuario_id, cliente]
-  );
-  res.json(rows[0]);
+  const { items, subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente } = req.body;
+  const conexion = await pool.connect();
+  try {
+    await conexion.query('BEGIN');
+    for (const item of items) {
+      const r = await conexion.query(
+        'UPDATE productos SET stock = stock - $1 WHERE id = $2 AND stock >= $1',
+        [item.cantidad, item.id]
+      );
+      if (r.rowCount === 0) throw new Error('No hay stock suficiente de ' + item.nombre);
+    }
+    const { rows } = await conexion.query(
+      `INSERT INTO ventas (items, subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [JSON.stringify(items), subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente]
+    );
+    await conexion.query('COMMIT');
+    res.json(rows[0]);
+  } catch (e) {
+    await conexion.query('ROLLBACK');
+    res.status(400).json({ error: e.message });
+  } finally {
+    conexion.release();
+  }
 });
 
 // Todas las ventas (solo admin)

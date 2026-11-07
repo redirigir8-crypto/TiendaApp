@@ -1,8 +1,10 @@
-// Historial de compras del usuario, con botón para descargar la factura
-import { useEffect, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { misCompras, usuarioGuardado, Venta } from '../db';
-import { descargarFactura, pesos } from '../factura';
+// Historial de compras del usuario. Al tocar una se abre su comprobante.
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text } from 'react-native';
+import { misCompras, usuarioGuardado, Venta } from '@/db';
+import * as estado from '@/estado';
+import { pesos } from '@/factura';
 
 export default function Compras() {
   const usuario = usuarioGuardado();
@@ -16,11 +18,18 @@ export default function Compras() {
     setCargando(false);
   };
 
-  // Al abrir la pantalla carga las compras
-  useEffect(() => {
-    if (usuario) misCompras(usuario).then(setCompras);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Cada vez que se abre la pestaña recarga las compras
+  useFocusEffect(
+    useCallback(() => {
+      const u = usuarioGuardado();
+      if (u) misCompras(u).then(setCompras);
+    }, [])
+  );
+
+  const abrir = (v: Venta) => {
+    estado.verComprobante(v);
+    router.push('/comprobante');
+  };
 
   return (
     <FlatList
@@ -30,9 +39,9 @@ export default function Compras() {
       refreshControl={<RefreshControl refreshing={cargando} onRefresh={recargar} />}
       ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 30 }}>Aún no tienes compras</Text>}
       renderItem={({ item }) => (
-        <View style={estilos.tarjeta}>
+        <Pressable style={estilos.tarjeta} onPress={() => abrir(item)}>
           <Text style={estilos.titulo}>
-            Factura N° {item.id} {item.pendiente ? '(pendiente)' : ''}
+            Comprobante N° {item.id} {item.pendiente ? '(pendiente)' : ''}
           </Text>
           <Text style={{ color: '#666' }}>{new Date(item.fecha).toLocaleString('es-CO')}</Text>
           {item.items.map((i) => (
@@ -41,10 +50,8 @@ export default function Compras() {
             </Text>
           ))}
           <Text style={estilos.total}>Total: {pesos(item.total)}</Text>
-          <Pressable style={estilos.boton} onPress={() => usuario && descargarFactura(item, usuario)}>
-            <Text style={{ color: 'white', fontWeight: 'bold' }}>Descargar factura PDF</Text>
-          </Pressable>
-        </View>
+          <Text style={estilos.enlace}>Ver comprobante ›</Text>
+        </Pressable>
       )}
     />
   );
@@ -54,5 +61,5 @@ const estilos = StyleSheet.create({
   tarjeta: { backgroundColor: 'white', margin: 10, marginBottom: 0, padding: 14, borderRadius: 10 },
   titulo: { fontSize: 16, fontWeight: 'bold' },
   total: { fontWeight: 'bold', color: '#1e6fd9', marginTop: 6 },
-  boton: { backgroundColor: '#1e6fd9', padding: 10, borderRadius: 6, alignItems: 'center', marginTop: 10 },
+  enlace: { color: '#1e6fd9', marginTop: 6, textAlign: 'right' },
 });
