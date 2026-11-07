@@ -54,7 +54,18 @@ db?.execSync(`
     id INTEGER PRIMARY KEY AUTOINCREMENT, datos TEXT, fecha TEXT);
   CREATE TABLE IF NOT EXISTS sesion (
     id INTEGER PRIMARY KEY, nombre TEXT, email TEXT);
+  CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT);
 `);
+
+// ---------- Configuración guardada en el celular ----------
+// Ej: la carpeta donde se guardan las facturas PDF
+export function leerConfig(clave: string) {
+  return db?.getFirstSync<{ valor: string }>('SELECT valor FROM config WHERE clave = ?', [clave])?.valor ?? null;
+}
+export function guardarConfig(clave: string, valor: string | null) {
+  if (valor === null) db?.runSync('DELETE FROM config WHERE clave = ?', [clave]);
+  else db?.runSync('INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)', [clave, valor]);
+}
 
 // Ayudante para hacer POST con JSON
 async function post(ruta: string, cuerpo: object) {
