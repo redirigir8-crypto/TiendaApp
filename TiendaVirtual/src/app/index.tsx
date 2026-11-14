@@ -64,6 +64,10 @@ export default function Login() {
           {modoRegistro ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'}
         </Text>
       </Pressable>
+
+      <Pressable onPress={() => router.push('/admin-entrar')}>
+        <Text style={estilos.admin}>🔐 Soy administrador</Text>
+      </Pressable>
     </View>
   );
 }
@@ -75,4 +79,5 @@ const estilos = StyleSheet.create({
   boton: { backgroundColor: '#1e6fd9', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 8 },
   textoBoton: { color: 'white', fontWeight: 'bold', fontSize: 16 },
   enlace: { color: '#1e6fd9', textAlign: 'center', marginTop: 18 },
+  admin: { color: '#64748b', textAlign: 'center', marginTop: 36, fontSize: 13 },
 });

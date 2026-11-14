@@ -8,7 +8,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Linking, Platform } from 'react-native';
-import { API, type Usuario, type Venta } from './db';
+import { API, numeroCompra, type Usuario, type Venta } from './db';
 
 export const pesos = (n: number) => '$' + Number(n).toLocaleString('es-CO');
 
@@ -34,7 +34,7 @@ export async function descargarFactura(venta: Venta, usuario: Usuario) {
   <html>
     <body style="font-family: Arial; padding: 30px;">
       <h1 style="color:#1e6fd9;">🚲 Tienda de Bicicletas</h1>
-      <h2>Factura N° ${venta.id}</h2>
+      <h2>Compra N° ${numeroCompra(venta)}</h2>
       <p><b>Cliente:</b> ${usuario.nombre} (${usuario.email})</p>
       <p><b>Fecha:</b> ${new Date(venta.fecha).toLocaleString('es-CO')}</p>
       ${venta.pendiente ? '<p style="color:#d93a3a;">Compra hecha sin internet (pendiente de sincronizar)</p>' : ''}
@@ -64,7 +64,7 @@ export async function descargarFactura(venta: Venta, usuario: Usuario) {
 
   // Compra sin internet (todavía no está en el servidor): se crea aquí y se comparte
   const { base64 } = await Print.printToFileAsync({ html, base64: true });
-  const archivo = new File(Paths.cache, `factura-${venta.id}.pdf`);
+  const archivo = new File(Paths.cache, `factura-${numeroCompra(venta)}.pdf`);
   if (archivo.exists) archivo.delete();
   archivo.create();
   archivo.write(base64 ?? '', { encoding: 'base64' });

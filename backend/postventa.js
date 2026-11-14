@@ -100,7 +100,12 @@ function rutas(app, pool, { soloAdmin, devolverStock }) {
 
   // Solicitudes de un usuario (app)
   app.get('/solicitudes/usuario/:id', async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM solicitudes WHERE usuario_id = $1 ORDER BY id DESC', [req.params.id]);
+    const { rows } = await pool.query(
+      `SELECT s.*, v.numero AS venta_numero
+       FROM solicitudes s LEFT JOIN ventas v ON v.id = s.venta_id
+       WHERE s.usuario_id = $1 ORDER BY s.id DESC`,
+      [req.params.id]
+    );
     res.json(rows);
   });
 

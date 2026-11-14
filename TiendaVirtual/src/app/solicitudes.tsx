@@ -43,7 +43,7 @@ export default function Solicitudes() {
           <View style={estilos.tarjeta}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <Text style={estilos.titulo}>
-                {item.tipo === 'devolucion' ? '↩ Devolución' : '🛠 Garantía'} · Pedido N° {item.venta_id}
+                {item.tipo === 'devolucion' ? '↩ Devolución' : '🛠 Garantía'} · Compra N° {item.venta_numero ?? item.venta_id}
               </Text>
               <Text style={{ color: est.color, fontWeight: 'bold' }}>{est.texto}</Text>
             </View>

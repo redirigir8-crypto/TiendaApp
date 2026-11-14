@@ -14,6 +14,7 @@ export type Producto = {
   descripcion?: string;
   imagen?: string;
   imagenes?: string[]; // varias fotos de la bicicleta
+  direccion?: string; // desde dónde se despacha
   stock: number;
 };
 
@@ -23,7 +24,7 @@ export function fotosDe(p: Producto): string[] {
   return p.imagen ? [p.imagen] : [];
 }
 export type ItemCarrito = Producto & { cantidad: number };
-export type Usuario = { id: number; nombre: string; email: string };
+export type Usuario = { id: number; nombre: string; email: string; direccion?: string; telefono?: string };
 
 // Datos de una compra (lo que se manda al servidor)
 export type DatosCompra = {
@@ -45,6 +46,7 @@ export type Venta = DatosCompra & {
   btc_direccion?: string; // dirección Bitcoin a la que se paga
   btc_satoshis?: number; // monto en satoshis (1 BTC = 100.000.000 sats)
   codigo?: string; // código secreto de la factura (para descargarla del servidor)
+  numero?: number; // número de compra del cliente (1, 2, 3...)
   // Qué puede hacer el cliente (lo calcula el servidor)
   puede_cancelar?: boolean;
   puede_devolver?: boolean;
@@ -67,6 +69,12 @@ db?.execSync(`
     id INTEGER PRIMARY KEY, nombre TEXT, email TEXT);
   CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT);
 `);
+// Columnas nuevas de la sesión (si ya existen, SQLite da error y se ignora)
+for (const columna of ['direccion', 'telefono']) {
+  try {
+    db?.execSync(`ALTER TABLE sesion ADD COLUMN ${columna} TEXT`);
+  } catch {}
+}
 
 // ---------- Configuración guardada en el celular ----------
 // Ej: la carpeta donde se guardan las facturas PDF
@@ -89,6 +97,9 @@ async function post(ruta: string, cuerpo: object) {
   if (!res.ok) throw new ErrorServidor(data.error || 'Error del servidor');
   return data;
 }
+
+// Número que ve el cliente: su número de compra (o "P1" si es una compra sin internet)
+export const numeroCompra = (v: Venta) => String(v.numero ?? v.id);
 
 // Convierte los números que llegan de Postgres como texto
 const aVenta = (v: any): Venta => ({
@@ -114,7 +125,9 @@ function guardarSesion(u: Usuario) {
     return;
   }
   db.runSync('DELETE FROM sesion');
-  db.runSync('INSERT INTO sesion (id, nombre, email) VALUES (?, ?, ?)', [u.id, u.nombre, u.email]);
+  db.runSync('INSERT INTO sesion (id, nombre, email, direccion, telefono) VALUES (?, ?, ?, ?, ?)', [
+    u.id, u.nombre, u.email, u.direccion ?? null, u.telefono ?? null,
+  ]);
 }
 
 export async function login(email: string, password: string) {
@@ -127,6 +140,22 @@ export async function registro(nombre: string, email: string, password: string) 
   const u: Usuario = await post('/registro', { nombre, email, password });
   guardarSesion(u);
   return u;
+}
+
+// Guarda nombre, dirección y teléfono en el servidor y en el celular
+export async function actualizarPerfil(
+  usuario: Usuario,
+  datos: { nombre: string; direccion: string; telefono: string }
+): Promise<Usuario> {
+  const res = await fetch(`${API}/usuarios/${usuario.id}/perfil`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...datos, email: usuario.email }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'No se pudo guardar');
+  guardarSesion(data);
+  return data;
 }
 
 export function cerrarSesion() {
@@ -195,6 +224,7 @@ export type TipoSolicitud = 'devolucion' | 'garantia';
 export type Solicitud = {
   id: number;
   venta_id: number;
+  venta_numero?: number; // número de compra del cliente
   tipo: TipoSolicitud;
   items: { id: number; nombre: string; cantidad: number }[];
   motivo: string;
@@ -242,6 +272,7 @@ export type Seguimiento = {
   entregado: boolean;
   aproximado: boolean; // true = no se encontró la dirección exacta en el mapa
   direccion: string;
+  origen_direccion: string; // desde dónde sale el pedido
   etapas: { nombre: string; hora: string; hecho: boolean }[];
 };
 

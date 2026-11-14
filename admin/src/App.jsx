@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 const API = 'https://tiendaapp-9xc4.onrender.com';
 
 // "imagenes" es un texto con una URL por línea (cada línea = una foto)
-const formVacio = { nombre: '', precio: '', stock: '', descripcion: '', imagenes: '' };
+const formVacio = { nombre: '', precio: '', stock: '', descripcion: '', imagenes: '', direccion: '' };
 
 // Lista de fotos de un producto (compatible con productos viejos que solo tienen "imagen")
 const fotosDe = (p) => (p.imagenes && p.imagenes.length ? p.imagenes : p.imagen ? [p.imagen] : []);
@@ -105,6 +105,7 @@ export default function App() {
       stock: p.stock ?? 0,
       descripcion: p.descripcion || '',
       imagenes: fotosDe(p).join('\n'),
+      direccion: p.direccion || '',
     });
   };
 
@@ -157,6 +158,7 @@ export default function App() {
             <input placeholder="Nombre" value={form.nombre} onChange={cambiar('nombre')} required />
             <input placeholder="Precio (sin IVA)" type="number" value={form.precio} onChange={cambiar('precio')} required />
             <input placeholder="Stock (unidades disponibles)" type="number" value={form.stock} onChange={cambiar('stock')} required />
+            <input placeholder="Dirección de despacho (desde dónde sale el producto)" value={form.direccion} onChange={cambiar('direccion')} />
             <textarea placeholder="Descripción" value={form.descripcion} onChange={cambiar('descripcion')} />
             <label>Fotos: pega una URL por línea (la primera es la portada)</label>
             <textarea rows={4} placeholder={'https://...foto-frente.jpg\nhttps://...foto-lado.jpg'} value={form.imagenes} onChange={cambiar('imagenes')} />
@@ -186,7 +188,7 @@ export default function App() {
                       {fotosDe(p).length ? <img className="mini" src={fotosDe(p)[0]} /> : '🚲'}
                       {fotosDe(p).length > 1 && <small> +{fotosDe(p).length - 1}</small>}
                     </td>
-                    <td>{p.nombre}</td>
+                    <td>{p.nombre}{p.direccion && <><br /><small>📦 {p.direccion}</small></>}</td>
                     <td>{pesos(p.precio)}</td>
                     <td style={{ color: p.stock > 0 ? 'green' : 'red' }}>{p.stock > 0 ? p.stock : 'Agotado'}</td>
                     <td>

@@ -47,6 +47,13 @@ async function init() {
     ALTER TABLE productos ADD COLUMN IF NOT EXISTS imagen TEXT;
     ALTER TABLE productos ADD COLUMN IF NOT EXISTS stock INTEGER DEFAULT 10;
     ALTER TABLE productos ADD COLUMN IF NOT EXISTS imagenes JSONB DEFAULT '[]';
+    -- dirección desde donde se despacha el producto (bodega) y sus coordenadas
+    ALTER TABLE productos ADD COLUMN IF NOT EXISTS direccion TEXT;
+    ALTER TABLE productos ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
+    ALTER TABLE productos ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+    -- datos de entrega del cliente (se llenan en Perfil)
+    ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS direccion TEXT;
+    ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono TEXT;
 
     CREATE TABLE IF NOT EXISTS ventas (
       id SERIAL PRIMARY KEY, items JSONB, total NUMERIC,
@@ -68,7 +75,12 @@ async function init() {
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS pagado_en TIMESTAMP; -- desde aquí cuenta el seguimiento
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION; -- coordenadas de la dirección de envío
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+    -- numero = número de compra de CADA cliente (su primera compra es la 1, la segunda la 2...)
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS numero INTEGER;
     ${postventa.SQL_TABLAS}
+    UPDATE ventas v SET numero = r.n
+      FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY usuario_id ORDER BY id) AS n FROM ventas) r
+      WHERE v.id = r.id AND v.numero IS NULL;
     UPDATE ventas SET codigo = md5(random()::text || id::text) WHERE codigo IS NULL;
     UPDATE ventas SET pagado_en = fecha WHERE pagado_en IS NULL AND COALESCE(estado, 'pagado') = 'pagado';
   `);
@@ -98,15 +110,16 @@ app.get('/', (req, res) => res.send('API Tienda de Bicicletas funcionando'));
 
 // ---------- Usuarios ----------
 app.post('/registro', async (req, res) => {
-  const { nombre, email, password } = req.body;
+  const { nombre, email, password, direccion, telefono } = req.body;
   if (!nombre || !email || !password) {
     return res.status(400).json({ error: 'Faltan datos' });
   }
   try {
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(
-      'INSERT INTO usuarios (nombre, email, password) VALUES ($1, $2, $3) RETURNING id, nombre, email',
-      [nombre, email.toLowerCase(), hash]
+      `INSERT INTO usuarios (nombre, email, password, direccion, telefono) VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, nombre, email, direccion, telefono`,
+      [nombre, email.toLowerCase(), hash, direccion || null, telefono || null]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -123,7 +136,23 @@ app.post('/login', async (req, res) => {
   if (!usuario || !(await bcrypt.compare(password || '', usuario.password))) {
     return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
   }
-  res.json({ id: usuario.id, nombre: usuario.nombre, email: usuario.email });
+  res.json({
+    id: usuario.id, nombre: usuario.nombre, email: usuario.email,
+    direccion: usuario.direccion, telefono: usuario.telefono,
+  });
+});
+
+// Actualizar el perfil (nombre, dirección y teléfono). Se valida con el correo del usuario.
+app.put('/usuarios/:id/perfil', async (req, res) => {
+  const { email, nombre, direccion, telefono } = req.body;
+  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre no puede quedar vacío' });
+  const { rows } = await pool.query(
+    `UPDATE usuarios SET nombre = $1, direccion = $2, telefono = $3
+     WHERE id = $4 AND email = $5 RETURNING id, nombre, email, direccion, telefono`,
+    [nombre.trim(), direccion || null, telefono || null, req.params.id, (email || '').toLowerCase()]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
+  res.json(rows[0]);
 });
 
 // ---------- Productos ----------
@@ -133,20 +162,31 @@ app.get('/productos', async (req, res) => {
 });
 
 // imagenes = lista de URLs (varias fotos de la bicicleta). La primera es la portada.
+// direccion = desde dónde se despacha; se busca en el mapa al guardar
+async function ubicar(direccion) {
+  if (!direccion || !direccion.trim()) return { lat: null, lng: null };
+  return (await seguimiento.ubicarDireccion(direccion)) || { lat: null, lng: null };
+}
+
 app.post('/productos', soloAdmin, async (req, res) => {
-  const { nombre, precio, descripcion, stock, imagenes = [] } = req.body;
+  const { nombre, precio, descripcion, stock, imagenes = [], direccion } = req.body;
+  const punto = await ubicar(direccion);
   const { rows } = await pool.query(
-    'INSERT INTO productos (nombre, precio, descripcion, imagen, imagenes, stock) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-    [nombre, precio, descripcion, imagenes[0] || null, JSON.stringify(imagenes), stock]
+    `INSERT INTO productos (nombre, precio, descripcion, imagen, imagenes, stock, direccion, lat, lng)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [nombre, precio, descripcion, imagenes[0] || null, JSON.stringify(imagenes), stock, direccion || null, punto.lat, punto.lng]
   );
   res.json(rows[0]);
 });
 
 app.put('/productos/:id', soloAdmin, async (req, res) => {
-  const { nombre, precio, descripcion, stock, imagenes = [] } = req.body;
+  const { nombre, precio, descripcion, stock, imagenes = [], direccion } = req.body;
+  const punto = await ubicar(direccion);
   const { rows } = await pool.query(
-    'UPDATE productos SET nombre=$1, precio=$2, descripcion=$3, imagen=$4, imagenes=$5, stock=$6 WHERE id=$7 RETURNING *',
-    [nombre, precio, descripcion, imagenes[0] || null, JSON.stringify(imagenes), stock, req.params.id]
+    `UPDATE productos SET nombre=$1, precio=$2, descripcion=$3, imagen=$4, imagenes=$5, stock=$6,
+       direccion=$7, lat=$8, lng=$9 WHERE id=$10 RETURNING *`,
+    [nombre, precio, descripcion, imagenes[0] || null, JSON.stringify(imagenes), stock,
+     direccion || null, punto.lat, punto.lng, req.params.id]
   );
   res.json(rows[0]);
 });
@@ -213,8 +253,10 @@ app.post('/ventas', async (req, res) => {
     }
     const { rows } = await conexion.query(
       `INSERT INTO ventas (items, subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente, estado,
-                           codigo, pagado_en)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CASE WHEN $10 = 'pagado' THEN NOW() END) RETURNING *`,
+                           codigo, pagado_en, numero)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CASE WHEN $10 = 'pagado' THEN NOW() END,
+               (SELECT COALESCE(MAX(numero), 0) + 1 FROM ventas WHERE usuario_id = $8))
+       RETURNING *`,
       [
         JSON.stringify(items), subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente, estado,
         crypto.randomUUID(),
@@ -296,7 +338,7 @@ app.get('/factura/:codigo', async (req, res) => {
   const cliente = (await clienteDe(venta)) || { nombre: venta.cliente || '-', email: '-' };
   const pdf = await crearPdf(venta, cliente, urlFactura(venta));
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="factura-${venta.id}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="factura-${venta.numero ?? venta.id}.pdf"`);
   res.send(pdf);
 });
 
@@ -324,7 +366,18 @@ app.get('/ventas/:id/seguimiento', async (req, res) => {
     }
     destino = { lat: venta.lat, lng: venta.lng };
   }
-  res.json({ ...seguimiento.calcular(venta, destino), direccion: venta.direccion, aproximado });
+  // Sale desde la dirección del primer producto que tenga ubicación (si no, desde la tienda)
+  const ids = (venta.items || []).map((i) => i.id);
+  const origenProducto = (
+    await pool.query('SELECT direccion, lat, lng FROM productos WHERE id = ANY($1) AND lat IS NOT NULL LIMIT 1', [ids])
+  ).rows[0];
+  const origen = origenProducto ? { lat: origenProducto.lat, lng: origenProducto.lng } : seguimiento.TIENDA;
+  res.json({
+    ...seguimiento.calcular(venta, destino, origen),
+    direccion: venta.direccion,
+    origen_direccion: origenProducto?.direccion || 'Tienda principal',
+    aproximado,
+  });
 });
 
 // Aviso automático de OpenNode cuando cambia el estado de un cobro

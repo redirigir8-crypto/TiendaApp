@@ -2,7 +2,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { misCompras, usuarioGuardado, Venta } from '@/db';
+import { misCompras, numeroCompra, usuarioGuardado, Venta } from '@/db';
 import * as estado from '@/estado';
 import { pesos } from '@/factura';
 
@@ -41,7 +41,7 @@ export default function Compras() {
       renderItem={({ item }) => (
         <Pressable style={estilos.tarjeta} onPress={() => abrir(item)}>
           <Text style={estilos.titulo}>
-            Comprobante N° {item.id} {item.pendiente ? '(sin enviar)' : ''}
+            Compra N° {numeroCompra(item)} {item.pendiente ? '(sin enviar)' : ''}
             {item.estado === 'pendiente_pago' ? ' ⏳ Esperando Bitcoin' : ''}
             {item.estado === 'expirado' ? ' ❌ Expirado' : ''}
             {item.estado === 'cancelado' ? ' ❌ Cancelado' : ''}

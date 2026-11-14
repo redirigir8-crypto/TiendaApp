@@ -70,6 +70,7 @@ export default function Producto() {
           {p.stock > 0 ? `En stock: ${p.stock}` : 'Agotado'}
         </Text>
         {!!p.descripcion && <Text style={{ color: '#444', marginTop: 6 }}>{p.descripcion}</Text>}
+        <Text style={{ color: '#666', marginTop: 10 }}>📦 Se despacha desde: {p.direccion || 'Tienda principal'}</Text>
       </View>
 
       {p.stock > 0 && (

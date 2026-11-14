@@ -2,7 +2,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { crearSolicitud, TipoSolicitud, usuarioGuardado } from '../db';
+import { crearSolicitud, numeroCompra, TipoSolicitud, usuarioGuardado } from '../db';
 import * as estado from '../estado';
 
 // Motivos rápidos para elegir (el cliente puede escribir más detalles)
@@ -54,7 +54,7 @@ export default function Solicitud() {
   return (
     <ScrollView style={estilos.pantalla} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={estilos.tarjeta}>
-        <Text style={estilos.titulo}>{esDevolucion ? '↩ Devolución' : '🛠 Garantía'} · Pedido N° {venta.id}</Text>
+        <Text style={estilos.titulo}>{esDevolucion ? '↩ Devolución' : '🛠 Garantía'} · Compra N° {numeroCompra(venta)}</Text>
         <Text style={estilos.gris}>
           {esDevolucion
             ? 'Elige qué productos quieres devolver. Si se aprueba, te reembolsamos el valor.'

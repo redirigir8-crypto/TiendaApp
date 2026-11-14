@@ -35,7 +35,8 @@ async function crearPdf(venta, cliente, urlFactura) {
     doc.fontSize(8).fillColor('#666').text('Escanea para ver la factura', 430, 168, { width: 120, align: 'center' });
 
     doc.fontSize(22).fillColor('#1e6fd9').text('Tienda de Bicicletas', 50, 50);
-    doc.moveDown(0.5).fontSize(16).fillColor('black').text(`Factura N° ${venta.id}`);
+    doc.moveDown(0.5).fontSize(16).fillColor('black').text(`Compra N° ${venta.numero ?? venta.id}`);
+    doc.fontSize(9).fillColor('#666').text(`Referencia de la tienda: #${venta.id}`).fillColor('black');
     doc.fontSize(11).moveDown(0.5);
     doc.text(`Cliente: ${cliente.nombre} (${cliente.email})`);
     doc.text(`Fecha: ${new Date(venta.fecha).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}`);
@@ -118,14 +119,14 @@ async function enviarFactura(venta, cliente, urlFactura) {
   const correo = {
     from: `"Tienda de Bicicletas" <${remitente}>`,
     to: `"${cliente.nombre}" <${cliente.email}>`,
-    subject: `Tu factura N° ${venta.id} - Tienda de Bicicletas`,
+    subject: `Tu factura de la compra N° ${venta.numero ?? venta.id} - Tienda de Bicicletas`,
     html: `
       <h2 style="color:#1e6fd9;">¡Gracias por tu compra, ${cliente.nombre}!</h2>
       <p>Tu pago fue aprobado. Total: <b>${pesos(venta.total)}</b></p>
       <p>Medio de pago: ${venta.metodo_pago}</p>
       <p>Adjuntamos tu factura en PDF. También puedes verla aquí:
         <a href="${urlFactura}">${urlFactura}</a></p>`,
-    attachments: [{ filename: `factura-${venta.id}.pdf`, content: pdf }],
+    attachments: [{ filename: `factura-${venta.numero ?? venta.id}.pdf`, content: pdf }],
   };
   if (gmail) await enviarConGmail(correo);
   else await conexion.sendMail(correo);

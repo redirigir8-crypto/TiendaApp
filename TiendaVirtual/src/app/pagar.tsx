@@ -16,8 +16,9 @@ export default function Pagar() {
   const usuario = usuarioGuardado();
   const items = estado.carrito;
 
-  const [domicilio, setDomicilio] = useState(false);
-  const [direccion, setDireccion] = useState('');
+  // Si el cliente tiene dirección en su perfil, se propone envío a domicilio a esa dirección
+  const [domicilio, setDomicilio] = useState(!!usuario?.direccion);
+  const [direccion, setDireccion] = useState(usuario?.direccion ?? '');
   const [metodo, setMetodo] = useState<Metodo>('tarjeta');
   // Tarjeta
   const [numero, setNumero] = useState('');

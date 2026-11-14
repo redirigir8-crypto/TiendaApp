@@ -74,7 +74,8 @@ export default function PantallaSeguimiento() {
         )}
         {datos.domicilio && (
           <>
-            <Text style={{ marginTop: 8 }}>📍 {datos.direccion}</Text>
+            <Text style={{ marginTop: 8 }}>📦 Sale desde: {datos.origen_direccion}</Text>
+            <Text style={{ marginTop: 2 }}>📍 Llega a: {datos.direccion}</Text>
             <Text style={estilos.gris}>Distancia desde la tienda: {datos.distancia_km} km</Text>
             {datos.aproximado && (
               <Text style={estilos.aviso}>No encontramos la dirección exacta en el mapa; se muestra un punto aproximado.</Text>
@@ -117,7 +118,7 @@ function htmlMapa(d: Seguimiento) {
   function icono(emoji) { return L.divIcon({ html: emoji, className: 'icono', iconSize: [26, 26] }); }
   var tienda = [${d.tienda.lat}, ${d.tienda.lng}];
   var destino = [${d.destino.lat}, ${d.destino.lng}];
-  L.marker(tienda, { icon: icono('🏪') }).addTo(mapa).bindPopup('Tienda');
+  L.marker(tienda, { icon: icono('🏪') }).addTo(mapa).bindPopup('Despacho');
   ${d.domicilio ? `
   L.marker(destino, { icon: icono('🏠') }).addTo(mapa).bindPopup('Tu dirección');
   L.polyline([tienda, destino], { color: '#1e6fd9', dashArray: '6 8' }).addTo(mapa);

@@ -9,6 +9,8 @@ import { Stack } from 'expo-router';
 //  seguimiento  -> mapa con dónde va el pedido y a qué hora llega
 //  solicitud    -> formulario de devolución o garantía
 //  solicitudes  -> mis devoluciones y garantías con la respuesta de la tienda
+//  admin-entrar -> clave del administrador
+//  admin/       -> panel del administrador (Resumen, Productos, Ventas, Postventa, Usuarios)
 export default function Layout() {
   return (
     <Stack screenOptions={{ headerStyle: { backgroundColor: '#1e6fd9' }, headerTintColor: 'white' }}>
@@ -20,6 +22,8 @@ export default function Layout() {
       <Stack.Screen name="seguimiento" options={{ title: 'Seguimiento del pedido' }} />
       <Stack.Screen name="solicitud" options={{ title: 'Nueva solicitud' }} />
       <Stack.Screen name="solicitudes" options={{ title: 'Devoluciones y garantías' }} />
+      <Stack.Screen name="admin-entrar" options={{ headerShown: false }} />
+      <Stack.Screen name="admin" options={{ headerShown: false }} />
     </Stack>
   );
 }

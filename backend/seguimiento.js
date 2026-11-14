@@ -48,11 +48,12 @@ function distanciaKm(a, b) {
 }
 
 // Arma el estado del seguimiento según la hora en que se pagó
-function calcular(venta, destino) {
+// origen = desde dónde se despacha (dirección del producto). Si no tiene, sale de la tienda.
+function calcular(venta, destino, origen = TIENDA) {
   const inicio = new Date(venta.pagado_en || venta.fecha).getTime();
   const ahora = Date.now();
   const domicilio = !!venta.direccion;
-  const km = domicilio ? distanciaKm(TIENDA, destino) : 0;
+  const km = domicilio ? distanciaKm(origen, destino) : 0;
   const minutosViaje = domicilio ? Math.max(3, Math.round((km / VELOCIDAD_KMH) * 60)) : 0;
 
   const salida = inicio + MINUTOS_PREPARACION * 60000;
@@ -64,8 +65,8 @@ function calcular(venta, destino) {
   else if (ahora > salida) progreso = (ahora - salida) / (llegada - salida);
 
   const actual = {
-    lat: TIENDA.lat + (destino.lat - TIENDA.lat) * progreso,
-    lng: TIENDA.lng + (destino.lng - TIENDA.lng) * progreso,
+    lat: origen.lat + (destino.lat - origen.lat) * progreso,
+    lng: origen.lng + (destino.lng - origen.lng) * progreso,
   };
 
   const etapas = domicilio
@@ -83,7 +84,7 @@ function calcular(venta, destino) {
 
   return {
     domicilio,
-    tienda: TIENDA,
+    tienda: origen, // desde dónde sale el pedido
     destino,
     actual,
     progreso,

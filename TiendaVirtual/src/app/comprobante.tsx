@@ -3,7 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { cancelarPedido, estadoVenta, simularPago, usuarioGuardado } from '../db';
+import { cancelarPedido, estadoVenta, numeroCompra, simularPago, usuarioGuardado } from '../db';
 import * as estado from '../estado';
 import { descargarFactura, pesos } from '../factura';
 
@@ -125,7 +125,7 @@ export default function Comprobante() {
       </View>
 
       <View style={estilos.tarjeta}>
-        <Dato titulo="Comprobante N°" valor={String(venta.id)} />
+        <Dato titulo="Compra N°" valor={numeroCompra(venta)} />
         <Dato titulo="Fecha" valor={new Date(venta.fecha).toLocaleString('es-CO')} />
         <Dato titulo="Cliente" valor={usuario.nombre} />
         <Dato titulo="Medio de pago" valor={venta.metodo_pago} />
