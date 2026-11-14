@@ -61,11 +61,11 @@ let transporte = null;
 function smtp() {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
   if (!transporte) {
-    const puerto = Number(process.env.SMTP_PORT || 2525);
+    const puerto = Number(process.env.SMTP_PORT || 587);
     transporte = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: puerto,
-      secure: puerto === 465, // 465 usa SSL directo; 2525 y 587 usan STARTTLS
+      secure: puerto === 465, // 465 usa SSL directo; 587 usa STARTTLS (Gmail)
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     });
   }
