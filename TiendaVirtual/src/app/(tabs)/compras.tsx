@@ -43,7 +43,8 @@ export default function Compras() {
           <Text style={estilos.titulo}>
             Comprobante N° {item.id} {item.pendiente ? '(sin enviar)' : ''}
             {item.estado === 'pendiente_pago' ? ' ⏳ Esperando Bitcoin' : ''}
-            {item.estado === 'expirado' || item.estado === 'cancelado' ? ' ❌ Expirado' : ''}
+            {item.estado === 'expirado' ? ' ❌ Expirado' : ''}
+            {item.estado === 'cancelado' ? ' ❌ Cancelado' : ''}
           </Text>
           <Text style={{ color: '#666' }}>{new Date(item.fecha).toLocaleString('es-CO')}</Text>
           {item.items.map((i) => (

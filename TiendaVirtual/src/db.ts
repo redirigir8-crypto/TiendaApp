@@ -45,6 +45,11 @@ export type Venta = DatosCompra & {
   btc_direccion?: string; // dirección Bitcoin a la que se paga
   btc_satoshis?: number; // monto en satoshis (1 BTC = 100.000.000 sats)
   codigo?: string; // código secreto de la factura (para descargarla del servidor)
+  // Qué puede hacer el cliente (lo calcula el servidor)
+  puede_cancelar?: boolean;
+  puede_devolver?: boolean;
+  puede_garantia?: boolean;
+  pagado_en?: string;
 };
 
 // Error que devuelve el servidor (ej: "sin stock"). Se distingue de "no hay internet".
@@ -177,6 +182,40 @@ export async function comprar(usuario: Usuario, compra: DatosCompra): Promise<Ve
 export async function estadoVenta(id: number | string): Promise<Venta> {
   const res = await fetch(`${API}/ventas/${id}/estado`);
   return aVenta(await res.json());
+}
+
+// ---------- Postventa: cancelar, devoluciones y garantías ----------
+export type TipoSolicitud = 'devolucion' | 'garantia';
+export type Solicitud = {
+  id: number;
+  venta_id: number;
+  tipo: TipoSolicitud;
+  items: { id: number; nombre: string; cantidad: number }[];
+  motivo: string;
+  estado: 'pendiente' | 'aprobada' | 'rechazada';
+  respuesta?: string;
+  fecha: string;
+};
+
+// Cancela el pedido. Devuelve la venta actualizada y un mensaje para mostrar.
+export async function cancelarPedido(usuario: Usuario, id: number | string) {
+  const v = await post(`/ventas/${id}/cancelar`, { usuario_id: usuario.id });
+  return { venta: aVenta(v), mensaje: v.mensaje as string };
+}
+
+export async function crearSolicitud(
+  usuario: Usuario,
+  ventaId: number | string,
+  tipo: TipoSolicitud,
+  items: { id: number; cantidad: number }[],
+  motivo: string
+): Promise<Solicitud> {
+  return post(`/ventas/${ventaId}/solicitudes`, { usuario_id: usuario.id, tipo, items, motivo });
+}
+
+export async function misSolicitudes(usuario: Usuario): Promise<Solicitud[]> {
+  const res = await fetch(`${API}/solicitudes/usuario/${usuario.id}`);
+  return res.json();
 }
 
 // MODO SIMULADO: confirma el pago Bitcoin (botón "Simular pago confirmado")

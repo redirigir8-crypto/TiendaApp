@@ -11,7 +11,7 @@ const TIENDA = {
 };
 
 // Tiempos del envío (cámbialos aquí)
-const MINUTOS_PREPARACION = 2; // tiempo empacando el pedido
+const MINUTOS_PREPARACION = 5; // tiempo empacando el pedido (mientras tanto se puede cancelar)
 const VELOCIDAD_KMH = 30; // velocidad del domiciliario
 
 // Busca las coordenadas de una dirección. Devuelve { lat, lng } o null.
@@ -94,4 +94,4 @@ function calcular(venta, destino) {
   };
 }
 
-module.exports = { TIENDA, ubicarDireccion, puntoCercano, calcular };
+module.exports = { TIENDA, MINUTOS_PREPARACION, ubicarDireccion, puntoCercano, calcular };

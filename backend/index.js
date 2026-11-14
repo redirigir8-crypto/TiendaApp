@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { Pool } = require('pg');
 const pagos = require('./pagos');
 const seguimiento = require('./seguimiento');
+const postventa = require('./postventa');
 const { enviarFactura, crearPdf } = require('./correo');
 
 const pool = new Pool({
@@ -67,6 +68,7 @@ async function init() {
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS pagado_en TIMESTAMP; -- desde aquí cuenta el seguimiento
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION; -- coordenadas de la dirección de envío
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+    ${postventa.SQL_TABLAS}
     UPDATE ventas SET codigo = md5(random()::text || id::text) WHERE codigo IS NULL;
     UPDATE ventas SET pagado_en = fecha WHERE pagado_en IS NULL AND COALESCE(estado, 'pagado') = 'pagado';
   `);
@@ -177,15 +179,20 @@ async function marcarPagada(ventaId) {
   if (rows[0]) mandarFactura(rows[0]);
 }
 
+// Devuelve productos al inventario
+async function devolverStock(items) {
+  for (const item of items || []) {
+    await pool.query('UPDATE productos SET stock = stock + $1 WHERE id = $2', [item.cantidad, item.id]);
+  }
+}
+
 // Cancela una venta sin pagar y devuelve el stock
 async function cancelarVenta(ventaId, estado) {
   const { rows } = await pool.query(
     "UPDATE ventas SET estado = $2 WHERE id = $1 AND estado = 'pendiente_pago' RETURNING *",
     [ventaId, estado]
   );
-  for (const item of rows[0]?.items || []) {
-    await pool.query('UPDATE productos SET stock = stock + $1 WHERE id = $2', [item.cantidad, item.id]);
-  }
+  await devolverStock(rows[0]?.items);
 }
 
 // Registra la compra y descuenta el stock (todo o nada, con una transacción).
@@ -268,8 +275,9 @@ app.get('/ventas/:id/estado', async (req, res) => {
       console.error('No se pudo consultar OpenNode:', e.message);
     }
   }
-  const actual = await pool.query('SELECT * FROM ventas WHERE id = $1', [req.params.id]);
-  res.json(actual.rows[0]);
+  const actual = (await pool.query('SELECT * FROM ventas WHERE id = $1', [req.params.id])).rows[0];
+  const solicitudes = (await pool.query('SELECT tipo, estado FROM solicitudes WHERE venta_id = $1', [venta.id])).rows;
+  res.json({ ...actual, ...postventa.opciones(actual, solicitudes) });
 });
 
 // MODO SIMULADO: el botón "Simular pago confirmado" de la app llama aquí
@@ -297,6 +305,7 @@ app.get('/ventas/:id/seguimiento', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM ventas WHERE id = $1', [req.params.id]);
   const venta = rows[0];
   if (!venta) return res.status(404).json({ error: 'Venta no encontrada' });
+  if (venta.estado === 'cancelado') return res.status(400).json({ error: 'Este pedido fue cancelado' });
   if ((venta.estado || 'pagado') !== 'pagado') {
     return res.status(400).json({ error: 'El seguimiento empieza cuando el pago esté confirmado' });
   }
@@ -350,13 +359,20 @@ app.get('/ventas', soloAdmin, async (req, res) => {
 });
 
 // Compras de un usuario (para la app)
+// (incluye qué puede hacer el cliente: cancelar, devolver, garantía)
 app.get('/ventas/usuario/:id', async (req, res) => {
   const { rows } = await pool.query(
     'SELECT * FROM ventas WHERE usuario_id = $1 ORDER BY id DESC',
     [req.params.id]
   );
-  res.json(rows);
+  const solicitudes = (
+    await pool.query('SELECT venta_id, tipo, estado FROM solicitudes WHERE usuario_id = $1', [req.params.id])
+  ).rows;
+  res.json(rows.map((v) => ({ ...v, ...postventa.opciones(v, solicitudes.filter((s) => s.venta_id === v.id)) })));
 });
+
+// Cancelar pedido, devoluciones y garantías
+postventa.rutas(app, pool, { soloAdmin, devolverStock });
 
 init()
   .then(() => app.listen(PORT, () => console.log('API en puerto ' + PORT)))

@@ -1,9 +1,9 @@
 // Comprobante de la compra. El PDF es opcional (botón secundario).
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { estadoVenta, simularPago, usuarioGuardado } from '../db';
+import { cancelarPedido, estadoVenta, simularPago, usuarioGuardado } from '../db';
 import * as estado from '../estado';
 import { descargarFactura, pesos } from '../factura';
 
@@ -12,6 +12,15 @@ export default function Comprobante() {
   const [venta, setVenta] = useState(estado.ventaVista);
   const esperandoBitcoin = venta?.estado === 'pendiente_pago';
   const fallido = venta?.estado === 'expirado' || venta?.estado === 'cancelado';
+
+  // Al abrir (o volver a) la pantalla: trae del servidor el estado y qué se puede hacer
+  // (cancelar, devolución, garantía)
+  useFocusEffect(
+    useCallback(() => {
+      const v = estado.ventaVista;
+      if (v && !v.pendiente) estadoVenta(v.id).then(setVenta).catch(() => {});
+    }, [])
+  );
 
   // Si es Bitcoin y no se ha pagado, pregunta al servidor cada 5 segundos
   useEffect(() => {
@@ -33,6 +42,29 @@ export default function Comprobante() {
     simularPago(venta.id)
       .then(setVenta)
       .catch((e) => Alert.alert('No se pudo confirmar', e.message));
+  };
+
+  const cancelar = () => {
+    Alert.alert('¿Cancelar el pedido?', 'Los productos vuelven a la tienda y se te reembolsa el dinero.', [
+      { text: 'No' },
+      {
+        text: 'Sí, cancelar',
+        style: 'destructive',
+        onPress: () =>
+          cancelarPedido(usuario, venta.id)
+            .then(({ venta: v, mensaje }) => {
+              setVenta(v);
+              Alert.alert('Pedido cancelado', mensaje);
+            })
+            .catch((e) => Alert.alert('No se pudo cancelar', e.message)),
+      },
+    ]);
+  };
+
+  // Abre el formulario de devolución o garantía
+  const solicitar = (tipo: 'devolucion' | 'garantia') => {
+    estado.verComprobante(venta);
+    router.push({ pathname: '/solicitud', params: { tipo } });
   };
 
   const descargar = () => {
@@ -76,8 +108,12 @@ export default function Comprobante() {
         ) : fallido ? (
           <>
             <Text style={{ fontSize: 50 }}>❌</Text>
-            <Text style={estilos.estado}>El pago Bitcoin expiró</Text>
-            <Text style={estilos.gris}>No se cobró nada y los productos volvieron al inventario.</Text>
+            <Text style={estilos.estado}>{venta.estado === 'cancelado' ? 'Pedido cancelado' : 'El pago Bitcoin expiró'}</Text>
+            <Text style={estilos.gris}>
+              {venta.estado === 'cancelado' && venta.pagado_en
+                ? 'El reembolso se hará al mismo medio de pago (simulado).'
+                : 'No se cobró nada y los productos volvieron al inventario.'}
+            </Text>
           </>
         ) : (
           <>
@@ -129,6 +165,28 @@ export default function Comprobante() {
           <Text style={{ color: '#1e6fd9', fontWeight: 'bold' }}>📄 Descargar factura PDF</Text>
         </Pressable>
       )}
+
+      {/* ---------- ¿Algún problema? ---------- */}
+      {(venta.puede_cancelar || venta.puede_devolver || venta.puede_garantia) && (
+        <View style={estilos.tarjeta}>
+          <Text style={estilos.titulo}>¿Algún problema con tu pedido?</Text>
+          {venta.puede_cancelar && (
+            <Pressable style={[estilos.botonPostventa, { borderColor: '#d93a3a' }]} onPress={cancelar}>
+              <Text style={{ color: '#d93a3a', fontWeight: 'bold' }}>✖ Cancelar pedido</Text>
+            </Pressable>
+          )}
+          {venta.puede_devolver && (
+            <Pressable style={estilos.botonPostventa} onPress={() => solicitar('devolucion')}>
+              <Text style={estilos.textoPostventa}>↩ Solicitar devolución</Text>
+            </Pressable>
+          )}
+          {venta.puede_garantia && (
+            <Pressable style={estilos.botonPostventa} onPress={() => solicitar('garantia')}>
+              <Text style={estilos.textoPostventa}>🛠 Solicitar garantía</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -149,6 +207,8 @@ function Dato({ titulo, valor }: { titulo: string; valor: string }) {
 }
 
 const estilos = StyleSheet.create({
+  botonPostventa: { borderWidth: 1, borderColor: '#777', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 8 },
+  textoPostventa: { color: '#444', fontWeight: 'bold' },
   pantalla: { flex: 1, backgroundColor: '#f4f6f8' },
   encabezado: { alignItems: 'center', padding: 20 },
   estado: { fontSize: 22, fontWeight: 'bold', marginTop: 6, textAlign: 'center' },

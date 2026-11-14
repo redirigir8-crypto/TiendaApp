@@ -24,6 +24,7 @@ export default function App() {
   const [productos, setProductos] = useState([]);
   const [ventas, setVentas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [solicitudes, setSolicitudes] = useState([]);
   const [form, setForm] = useState(formVacio);
   const [editandoId, setEditandoId] = useState(null);
 
@@ -48,6 +49,22 @@ export default function App() {
   const cargarUsuarios = async () => {
     const res = await pedir('/usuarios');
     if (res.ok) setUsuarios(await res.json());
+  };
+
+  const cargarSolicitudes = async () => {
+    const res = await pedir('/solicitudes');
+    if (res.ok) setSolicitudes(await res.json());
+  };
+
+  // Aprobar o rechazar una devolución / garantía
+  const responder = async (s, estado) => {
+    const respuesta = prompt(
+      estado === 'aprobada' ? 'Mensaje para el cliente (ej: pasaremos a recoger el producto):' : 'Motivo del rechazo:'
+    );
+    if (respuesta === null) return; // canceló
+    const res = await pedir('/solicitudes/' + s.id, 'PUT', { estado, respuesta });
+    if (!res.ok) alert((await res.json()).error);
+    cargarSolicitudes();
   };
 
   const entrar = async (e) => {
@@ -128,6 +145,9 @@ export default function App() {
         <button className={pestana === 'usuarios' ? 'activa' : ''} onClick={() => { setPestana('usuarios'); cargarUsuarios(); }}>
           Usuarios
         </button>
+        <button className={pestana === 'solicitudes' ? 'activa' : ''} onClick={() => { setPestana('solicitudes'); cargarSolicitudes(); }}>
+          Devoluciones y garantías
+        </button>
       </div>
 
       {pestana === 'productos' && (
@@ -204,6 +224,42 @@ export default function App() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {pestana === 'solicitudes' && (
+        <div className="tarjeta">
+          <h3>Devoluciones y garantías</h3>
+          <table>
+            <thead>
+              <tr><th>#</th><th>Tipo</th><th>Pedido</th><th>Cliente</th><th>Productos</th><th>Motivo</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody>
+              {solicitudes.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.id}</td>
+                  <td>{s.tipo === 'devolucion' ? '↩ Devolución' : '🛠 Garantía'}</td>
+                  <td>#{s.venta_id}</td>
+                  <td>{s.cliente}<br /><small>{s.email}</small></td>
+                  <td>{(s.items || []).map((i) => `${i.cantidad}x ${i.nombre}`).join(', ')}</td>
+                  <td>{s.motivo}</td>
+                  <td>
+                    {{ pendiente: '⏳ Pendiente', aprobada: '✅ Aprobada', rechazada: '❌ Rechazada' }[s.estado]}
+                    {s.respuesta && <><br /><small>{s.respuesta}</small></>}
+                  </td>
+                  <td>
+                    {s.estado === 'pendiente' && (
+                      <>
+                        <button onClick={() => responder(s, 'aprobada')}>Aprobar</button>
+                        <button className="rojo" onClick={() => responder(s, 'rechazada')}>Rechazar</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p><small>Al aprobar una devolución, los productos vuelven al inventario.</small></p>
         </div>
       )}
 
