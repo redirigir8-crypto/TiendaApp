@@ -6,6 +6,7 @@ import { Stack } from 'expo-router';
 //  producto     -> detalle de una bicicleta con todas sus fotos
 //  pagar        -> envío, IVA y medio de pago
 //  comprobante  -> resultado de la compra (y botón para el PDF)
+//  seguimiento  -> mapa con dónde va el pedido y a qué hora llega
 export default function Layout() {
   return (
     <Stack screenOptions={{ headerStyle: { backgroundColor: '#1e6fd9' }, headerTintColor: 'white' }}>
@@ -14,6 +15,7 @@ export default function Layout() {
       <Stack.Screen name="producto" options={{ title: 'Detalle' }} />
       <Stack.Screen name="pagar" options={{ title: 'Pagar' }} />
       <Stack.Screen name="comprobante" options={{ title: 'Comprobante' }} />
+      <Stack.Screen name="seguimiento" options={{ title: 'Seguimiento del pedido' }} />
     </Stack>
   );
 }

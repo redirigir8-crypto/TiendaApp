@@ -1,15 +1,24 @@
 // =============================================
-//  Factura en PDF (expo-print crea el PDF, expo-sharing lo guarda/comparte)
+//  Factura en PDF
+//  - Compras que ya están en el servidor: se DESCARGA el PDF (con código QR) desde el backend.
+//    El navegador del celular lo guarda en "Descargas".
+//  - Compras hechas sin internet: se crea aquí con expo-print y se comparte.
 // =============================================
-import { Directory, File, Paths } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
-import { Alert, Platform } from 'react-native';
 import * as Sharing from 'expo-sharing';
-import { guardarConfig, leerConfig, type Usuario, type Venta } from './db';
+import { Linking, Platform } from 'react-native';
+import { API, type Usuario, type Venta } from './db';
 
 export const pesos = (n: number) => '$' + Number(n).toLocaleString('es-CO');
 
 export async function descargarFactura(venta: Venta, usuario: Usuario) {
+  // Descarga directa desde el servidor
+  if (venta.codigo && !venta.pendiente) {
+    await Linking.openURL(`${API}/factura/${venta.codigo}`);
+    return;
+  }
+
   const filas = venta.items
     .map(
       (i) => `<tr>
@@ -53,46 +62,11 @@ export async function descargarFactura(venta: Venta, usuario: Usuario) {
     return;
   }
 
+  // Compra sin internet (todavía no está en el servidor): se crea aquí y se comparte
   const { base64 } = await Print.printToFileAsync({ html, base64: true });
-  const nombre = `factura-${venta.id}`;
-
-  // Android: guarda el PDF directo en una carpeta (se elige solo la primera vez)
-  if (Platform.OS === 'android') {
-    try {
-      await guardarEnCarpeta(nombre, base64 ?? '');
-      Alert.alert('Factura descargada', `Se guardó "${nombre}.pdf" en tu carpeta de facturas.`);
-      return;
-    } catch {
-      // si el usuario cancela o falla, se usa la opción de compartir de abajo
-    }
-  }
-
-  // iPhone (o si falló lo anterior): abre el menú para guardar/compartir
-  const archivo = new File(Paths.cache, `${nombre}.pdf`);
+  const archivo = new File(Paths.cache, `factura-${venta.id}.pdf`);
   if (archivo.exists) archivo.delete();
   archivo.create();
   archivo.write(base64 ?? '', { encoding: 'base64' });
   await Sharing.shareAsync(archivo.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
-}
-
-// Carpeta "Descargas" de Android, para que el selector abra ahí
-const DESCARGAS = 'content://com.android.externalstorage.documents/tree/primary%3ADownload';
-
-async function guardarEnCarpeta(nombre: string, base64: string) {
-  const guardada = leerConfig('carpetaFacturas');
-  try {
-    if (!guardada) throw new Error('sin carpeta');
-    escribirPdf(new Directory(guardada), nombre, base64);
-  } catch {
-    // Primera vez (o se perdió el permiso): pedir la carpeta y recordarla
-    guardarConfig('carpetaFacturas', null);
-    const carpeta = await Directory.pickDirectoryAsync(DESCARGAS);
-    guardarConfig('carpetaFacturas', carpeta.uri);
-    escribirPdf(carpeta, nombre, base64);
-  }
-}
-
-function escribirPdf(carpeta: Directory, nombre: string, base64: string) {
-  const archivo = carpeta.createFile(nombre, 'application/pdf');
-  archivo.write(base64, { encoding: 'base64' });
 }

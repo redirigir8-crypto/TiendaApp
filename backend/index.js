@@ -4,9 +4,11 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { Pool } = require('pg');
 const pagos = require('./pagos');
-const { enviarFactura } = require('./correo');
+const seguimiento = require('./seguimiento');
+const { enviarFactura, crearPdf } = require('./correo');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -23,6 +25,11 @@ app.use(express.urlencoded({ extended: true })); // los avisos de OpenNode llega
 
 // URL pública del backend (Render la pone sola). Sirve para que OpenNode nos avise.
 const URL_PUBLICA = process.env.RENDER_EXTERNAL_URL || process.env.URL_PUBLICA || '';
+const PORT = process.env.PORT || 3000;
+
+// Link público de la factura (va en el código QR del PDF y en el correo).
+// Usa un código aleatorio para que nadie pueda adivinar facturas ajenas.
+const urlFactura = (venta) => `${URL_PUBLICA || 'http://localhost:' + PORT}/factura/${venta.codigo}`;
 
 // ---------- Crear tablas al arrancar ----------
 async function init() {
@@ -56,6 +63,12 @@ async function init() {
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS checkout_url TEXT;
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS btc_direccion TEXT;
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS btc_satoshis BIGINT;
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS codigo TEXT;      -- código secreto de la factura (para el QR)
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS pagado_en TIMESTAMP; -- desde aquí cuenta el seguimiento
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION; -- coordenadas de la dirección de envío
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+    UPDATE ventas SET codigo = md5(random()::text || id::text) WHERE codigo IS NULL;
+    UPDATE ventas SET pagado_en = fecha WHERE pagado_en IS NULL AND COALESCE(estado, 'pagado') = 'pagado';
   `);
 
   // Quitar los productos de prueba viejos (arroz, leche, pan)
@@ -151,14 +164,14 @@ async function clienteDe(venta) {
 // Manda la factura al correo sin hacer esperar la respuesta
 function mandarFactura(venta) {
   clienteDe(venta)
-    .then((cliente) => cliente && enviarFactura(venta, cliente))
+    .then((cliente) => cliente && enviarFactura(venta, cliente, urlFactura(venta)))
     .catch((e) => console.error('Error con la factura:', e.message));
 }
 
 // Pasa una venta Bitcoin a "pagado" (solo una vez) y manda la factura
 async function marcarPagada(ventaId) {
   const { rows } = await pool.query(
-    "UPDATE ventas SET estado = 'pagado' WHERE id = $1 AND estado = 'pendiente_pago' RETURNING *",
+    "UPDATE ventas SET estado = 'pagado', pagado_en = NOW() WHERE id = $1 AND estado = 'pendiente_pago' RETURNING *",
     [ventaId]
   );
   if (rows[0]) mandarFactura(rows[0]);
@@ -192,9 +205,13 @@ app.post('/ventas', async (req, res) => {
       if (r.rowCount === 0) throw new Error('No hay stock suficiente de ' + item.nombre);
     }
     const { rows } = await conexion.query(
-      `INSERT INTO ventas (items, subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente, estado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [JSON.stringify(items), subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente, estado]
+      `INSERT INTO ventas (items, subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente, estado,
+                           codigo, pagado_en)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CASE WHEN $10 = 'pagado' THEN NOW() END) RETURNING *`,
+      [
+        JSON.stringify(items), subtotal, iva, envio, total, direccion, metodo_pago, usuario_id, cliente, estado,
+        crypto.randomUUID(),
+      ]
     );
     await conexion.query('COMMIT');
     venta = rows[0];
@@ -263,6 +280,44 @@ app.post('/ventas/:id/simular-pago', async (req, res) => {
   res.json(rows[0]);
 });
 
+// Factura en PDF (link del QR y botón "Descargar" de la app). Se descarga directo.
+app.get('/factura/:codigo', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM ventas WHERE codigo = $1', [req.params.codigo]);
+  const venta = rows[0];
+  if (!venta) return res.status(404).send('Factura no encontrada');
+  const cliente = (await clienteDe(venta)) || { nombre: venta.cliente || '-', email: '-' };
+  const pdf = await crearPdf(venta, cliente, urlFactura(venta));
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="factura-${venta.id}.pdf"`);
+  res.send(pdf);
+});
+
+// Seguimiento del pedido: dónde va y a qué hora llega
+app.get('/ventas/:id/seguimiento', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM ventas WHERE id = $1', [req.params.id]);
+  const venta = rows[0];
+  if (!venta) return res.status(404).json({ error: 'Venta no encontrada' });
+  if ((venta.estado || 'pagado') !== 'pagado') {
+    return res.status(400).json({ error: 'El seguimiento empieza cuando el pago esté confirmado' });
+  }
+
+  // La primera vez se busca la dirección en el mapa y se guarda
+  let destino = seguimiento.TIENDA;
+  let aproximado = false;
+  if (venta.direccion) {
+    if (venta.lat == null) {
+      const punto = await seguimiento.ubicarDireccion(venta.direccion);
+      aproximado = !punto;
+      const final = punto || seguimiento.puntoCercano(venta.id);
+      await pool.query('UPDATE ventas SET lat = $1, lng = $2 WHERE id = $3', [final.lat, final.lng, venta.id]);
+      venta.lat = final.lat;
+      venta.lng = final.lng;
+    }
+    destino = { lat: venta.lat, lng: venta.lng };
+  }
+  res.json({ ...seguimiento.calcular(venta, destino), direccion: venta.direccion, aproximado });
+});
+
 // Aviso automático de OpenNode cuando cambia el estado de un cobro
 app.post('/webhook/opennode', async (req, res) => {
   if (!pagos.avisoValido(req.body)) return res.status(401).send('firma inválida');
@@ -272,6 +327,20 @@ app.post('/webhook/opennode', async (req, res) => {
     if (req.body.status === 'expired') await cancelarVenta(rows[0].id, 'expirado');
   }
   res.send('ok');
+});
+
+// Usuarios registrados con cuántas compras tienen y cuánto han gastado (solo admin)
+app.get('/usuarios', soloAdmin, async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT u.id, u.nombre, u.email,
+           COUNT(v.id) FILTER (WHERE COALESCE(v.estado, 'pagado') = 'pagado') AS compras,
+           COALESCE(SUM(v.total) FILTER (WHERE COALESCE(v.estado, 'pagado') = 'pagado'), 0) AS total_gastado,
+           MAX(v.fecha) AS ultima_compra
+    FROM usuarios u
+    LEFT JOIN ventas v ON v.usuario_id = u.id
+    GROUP BY u.id
+    ORDER BY u.id DESC`);
+  res.json(rows);
 });
 
 // Todas las ventas (solo admin)
@@ -289,7 +358,6 @@ app.get('/ventas/usuario/:id', async (req, res) => {
   res.json(rows);
 });
 
-const PORT = process.env.PORT || 3000;
 init()
   .then(() => app.listen(PORT, () => console.log('API en puerto ' + PORT)))
   .catch((e) => console.error('Error al iniciar:', e.message));

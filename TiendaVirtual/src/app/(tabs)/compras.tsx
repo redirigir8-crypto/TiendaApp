@@ -1,7 +1,7 @@
 // Historial de compras del usuario. Al tocar una se abre su comprobante.
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { misCompras, usuarioGuardado, Venta } from '@/db';
 import * as estado from '@/estado';
 import { pesos } from '@/factura';
@@ -52,7 +52,18 @@ export default function Compras() {
             </Text>
           ))}
           <Text style={estilos.total}>Total: {pesos(item.total)}</Text>
-          <Text style={estilos.enlace}>Ver comprobante ›</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+            {!item.pendiente && (item.estado ?? 'pagado') === 'pagado' ? (
+              <Text
+                style={[estilos.enlace, { color: '#22a050' }]}
+                onPress={() => router.push({ pathname: '/seguimiento', params: { id: String(item.id) } })}>
+                📍 Seguir pedido
+              </Text>
+            ) : (
+              <View />
+            )}
+            <Text style={estilos.enlace}>Ver comprobante ›</Text>
+          </View>
         </Pressable>
       )}
     />
@@ -63,5 +74,5 @@ const estilos = StyleSheet.create({
   tarjeta: { backgroundColor: 'white', margin: 10, marginBottom: 0, padding: 14, borderRadius: 10 },
   titulo: { fontSize: 16, fontWeight: 'bold' },
   total: { fontWeight: 'bold', color: '#1e6fd9', marginTop: 6 },
-  enlace: { color: '#1e6fd9', marginTop: 6, textAlign: 'right' },
+  enlace: { color: '#1e6fd9', fontWeight: 'bold' },
 });

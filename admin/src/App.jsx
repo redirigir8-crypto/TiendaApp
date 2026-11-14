@@ -23,6 +23,7 @@ export default function App() {
   const [pestana, setPestana] = useState('productos');
   const [productos, setProductos] = useState([]);
   const [ventas, setVentas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
   const [form, setForm] = useState(formVacio);
   const [editandoId, setEditandoId] = useState(null);
 
@@ -42,6 +43,11 @@ export default function App() {
   const cargarVentas = async () => {
     const res = await pedir('/ventas');
     if (res.ok) setVentas(await res.json());
+  };
+
+  const cargarUsuarios = async () => {
+    const res = await pedir('/usuarios');
+    if (res.ok) setUsuarios(await res.json());
   };
 
   const entrar = async (e) => {
@@ -119,6 +125,9 @@ export default function App() {
         <button className={pestana === 'ventas' ? 'activa' : ''} onClick={() => { setPestana('ventas'); cargarVentas(); }}>
           Ventas
         </button>
+        <button className={pestana === 'usuarios' ? 'activa' : ''} onClick={() => { setPestana('usuarios'); cargarUsuarios(); }}>
+          Usuarios
+        </button>
       </div>
 
       {pestana === 'productos' && (
@@ -191,6 +200,29 @@ export default function App() {
                   <td>{pesos(v.iva)}</td>
                   <td><b>{pesos(v.total)}</b></td>
                   <td>{new Date(v.fecha).toLocaleString('es-CO')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {pestana === 'usuarios' && (
+        <div className="tarjeta">
+          <h3>Usuarios registrados ({usuarios.length})</h3>
+          <table>
+            <thead>
+              <tr><th>#</th><th>Nombre</th><th>Correo</th><th>Compras</th><th>Total gastado</th><th>Última compra</th></tr>
+            </thead>
+            <tbody>
+              {usuarios.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.id}</td>
+                  <td>{u.nombre}</td>
+                  <td>{u.email}</td>
+                  <td>{u.compras}</td>
+                  <td><b>{pesos(u.total_gastado)}</b></td>
+                  <td>{u.ultima_compra ? new Date(u.ultima_compra).toLocaleString('es-CO') : '-'}</td>
                 </tr>
               ))}
             </tbody>

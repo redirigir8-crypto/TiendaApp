@@ -117,6 +117,13 @@ export default function Comprobante() {
       <Pressable style={estilos.botonPrincipal} onPress={() => router.back()}>
         <Text style={{ color: 'white', fontWeight: 'bold' }}>Volver</Text>
       </Pressable>
+      {!esperandoBitcoin && !fallido && !venta.pendiente && (
+        <Pressable
+          style={[estilos.botonPrincipal, { backgroundColor: '#22a050', marginTop: 10 }]}
+          onPress={() => router.push({ pathname: '/seguimiento', params: { id: String(venta.id) } })}>
+          <Text style={{ color: 'white', fontWeight: 'bold' }}>📍 Seguir mi pedido</Text>
+        </Pressable>
+      )}
       {!esperandoBitcoin && !fallido && (
         <Pressable style={estilos.botonSecundario} onPress={descargar}>
           <Text style={{ color: '#1e6fd9', fontWeight: 'bold' }}>📄 Descargar factura PDF</Text>

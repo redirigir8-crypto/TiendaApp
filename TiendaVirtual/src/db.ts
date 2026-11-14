@@ -44,6 +44,7 @@ export type Venta = DatosCompra & {
   checkout_url?: string; // link para pagar con Bitcoin (OpenNode real)
   btc_direccion?: string; // dirección Bitcoin a la que se paga
   btc_satoshis?: number; // monto en satoshis (1 BTC = 100.000.000 sats)
+  codigo?: string; // código secreto de la factura (para descargarla del servidor)
 };
 
 // Error que devuelve el servidor (ej: "sin stock"). Se distingue de "no hay internet".
@@ -181,6 +182,29 @@ export async function estadoVenta(id: number | string): Promise<Venta> {
 // MODO SIMULADO: confirma el pago Bitcoin (botón "Simular pago confirmado")
 export async function simularPago(id: number | string): Promise<Venta> {
   return aVenta(await post(`/ventas/${id}/simular-pago`, {}));
+}
+
+// ---------- Seguimiento del pedido ----------
+export type Punto = { lat: number; lng: number };
+export type Seguimiento = {
+  domicilio: boolean;
+  tienda: Punto;
+  destino: Punto;
+  actual: Punto; // dónde va el domiciliario
+  progreso: number; // 0 = en la tienda, 1 = entregado
+  distancia_km: number;
+  llegada: string; // hora estimada de llegada
+  entregado: boolean;
+  aproximado: boolean; // true = no se encontró la dirección exacta en el mapa
+  direccion: string;
+  etapas: { nombre: string; hora: string; hecho: boolean }[];
+};
+
+export async function verSeguimiento(id: number | string): Promise<Seguimiento> {
+  const res = await fetch(`${API}/ventas/${id}/seguimiento`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'No se pudo cargar el seguimiento');
+  return data;
 }
 
 // Envía las compras que quedaron guardadas sin internet
