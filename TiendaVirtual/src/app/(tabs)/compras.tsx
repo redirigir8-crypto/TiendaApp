@@ -41,7 +41,9 @@ export default function Compras() {
       renderItem={({ item }) => (
         <Pressable style={estilos.tarjeta} onPress={() => abrir(item)}>
           <Text style={estilos.titulo}>
-            Comprobante N° {item.id} {item.pendiente ? '(pendiente)' : ''}
+            Comprobante N° {item.id} {item.pendiente ? '(sin enviar)' : ''}
+            {item.estado === 'pendiente_pago' ? ' ⏳ Esperando Bitcoin' : ''}
+            {item.estado === 'expirado' || item.estado === 'cancelado' ? ' ❌ Expirado' : ''}
           </Text>
           <Text style={{ color: '#666' }}>{new Date(item.fecha).toLocaleString('es-CO')}</Text>
           {item.items.map((i) => (

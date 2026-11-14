@@ -1,13 +1,26 @@
 // Comprobante de la compra. El PDF es opcional (botón secundario).
 import { router } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { usuarioGuardado } from '../db';
+import * as WebBrowser from 'expo-web-browser';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { estadoVenta, usuarioGuardado } from '../db';
 import * as estado from '../estado';
 import { descargarFactura, pesos } from '../factura';
 
 export default function Comprobante() {
   const usuario = usuarioGuardado();
-  const venta = estado.ventaVista;
+  const [venta, setVenta] = useState(estado.ventaVista);
+  const esperandoBitcoin = venta?.estado === 'pendiente_pago';
+  const fallido = venta?.estado === 'expirado' || venta?.estado === 'cancelado';
+
+  // Si es Bitcoin y no se ha pagado, pregunta al servidor cada 5 segundos
+  useEffect(() => {
+    if (!esperandoBitcoin || !venta) return;
+    const revisar = setInterval(() => {
+      estadoVenta(venta.id).then(setVenta).catch(() => {});
+    }, 5000);
+    return () => clearInterval(revisar);
+  }, [esperandoBitcoin, venta]);
 
   if (!venta || !usuario) {
     return <Text style={{ padding: 20 }}>No hay comprobante para mostrar</Text>;
@@ -20,10 +33,36 @@ export default function Comprobante() {
   return (
     <ScrollView style={estilos.pantalla} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={estilos.encabezado}>
-        <Text style={{ fontSize: 50 }}>{venta.pendiente ? '⏳' : '✅'}</Text>
-        <Text style={estilos.estado}>{venta.pendiente ? 'Compra guardada sin internet' : '¡Pago aprobado!'}</Text>
-        {venta.pendiente && (
-          <Text style={{ color: '#666', textAlign: 'center' }}>Se enviará a la tienda cuando tengas conexión.</Text>
+        {venta.pendiente ? (
+          <>
+            <Text style={{ fontSize: 50 }}>⏳</Text>
+            <Text style={estilos.estado}>Compra guardada sin internet</Text>
+            <Text style={estilos.gris}>Se enviará a la tienda cuando tengas conexión.</Text>
+          </>
+        ) : esperandoBitcoin ? (
+          <>
+            <Text style={{ fontSize: 50 }}>₿</Text>
+            <Text style={estilos.estado}>Esperando el pago Bitcoin</Text>
+            <ActivityIndicator style={{ marginVertical: 8 }} color="#f7931a" />
+            <Text style={estilos.gris}>Esta pantalla se actualiza sola cuando el pago se confirme.</Text>
+            {!!venta.checkout_url && (
+              <Pressable style={estilos.botonBitcoin} onPress={() => WebBrowser.openBrowserAsync(venta.checkout_url!)}>
+                <Text style={{ color: 'white', fontWeight: 'bold' }}>Abrir página de pago</Text>
+              </Pressable>
+            )}
+          </>
+        ) : fallido ? (
+          <>
+            <Text style={{ fontSize: 50 }}>❌</Text>
+            <Text style={estilos.estado}>El pago Bitcoin expiró</Text>
+            <Text style={estilos.gris}>No se cobró nada y los productos volvieron al inventario.</Text>
+          </>
+        ) : (
+          <>
+            <Text style={{ fontSize: 50 }}>✅</Text>
+            <Text style={estilos.estado}>¡Pago aprobado!</Text>
+            <Text style={estilos.gris}>Te enviamos la factura a {usuario.email}</Text>
+          </>
         )}
       </View>
 
@@ -56,9 +95,11 @@ export default function Comprobante() {
       <Pressable style={estilos.botonPrincipal} onPress={() => router.back()}>
         <Text style={{ color: 'white', fontWeight: 'bold' }}>Volver</Text>
       </Pressable>
-      <Pressable style={estilos.botonSecundario} onPress={descargar}>
-        <Text style={{ color: '#1e6fd9', fontWeight: 'bold' }}>📄 Descargar factura PDF</Text>
-      </Pressable>
+      {!esperandoBitcoin && !fallido && (
+        <Pressable style={estilos.botonSecundario} onPress={descargar}>
+          <Text style={{ color: '#1e6fd9', fontWeight: 'bold' }}>📄 Descargar factura PDF</Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 }
@@ -75,7 +116,9 @@ function Dato({ titulo, valor }: { titulo: string; valor: string }) {
 const estilos = StyleSheet.create({
   pantalla: { flex: 1, backgroundColor: '#f4f6f8' },
   encabezado: { alignItems: 'center', padding: 20 },
-  estado: { fontSize: 22, fontWeight: 'bold', marginTop: 6 },
+  estado: { fontSize: 22, fontWeight: 'bold', marginTop: 6, textAlign: 'center' },
+  gris: { color: '#666', textAlign: 'center', marginTop: 4 },
+  botonBitcoin: { backgroundColor: '#f7931a', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, marginTop: 12 },
   tarjeta: { backgroundColor: 'white', margin: 10, marginBottom: 0, padding: 14, borderRadius: 10 },
   titulo: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
   fila: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 3, gap: 10 },

@@ -8,6 +8,13 @@ const formVacio = { nombre: '', precio: '', stock: '', descripcion: '', imagenes
 
 // Lista de fotos de un producto (compatible con productos viejos que solo tienen "imagen")
 const fotosDe = (p) => (p.imagenes && p.imagenes.length ? p.imagenes : p.imagen ? [p.imagen] : []);
+// Cómo se muestra el estado de cada venta
+const ESTADOS = {
+  pagado: '✅ Pagado',
+  pendiente_pago: '⏳ Esperando Bitcoin',
+  expirado: '❌ Expirado',
+  cancelado: '❌ Cancelado',
+};
 const pesos = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 
 export default function App() {
@@ -170,7 +177,7 @@ export default function App() {
           <h3>Ventas</h3>
           <table>
             <thead>
-              <tr><th>#</th><th>Cliente</th><th>Productos</th><th>Pago</th><th>Entrega</th><th>IVA</th><th>Total</th><th>Fecha</th></tr>
+              <tr><th>#</th><th>Cliente</th><th>Productos</th><th>Pago</th><th>Estado</th><th>Entrega</th><th>IVA</th><th>Total</th><th>Fecha</th></tr>
             </thead>
             <tbody>
               {ventas.map((v) => (
@@ -179,6 +186,7 @@ export default function App() {
                   <td>{v.cliente || '-'}</td>
                   <td>{(v.items || []).map((i) => `${i.cantidad || 1}x ${i.nombre}`).join(', ')}</td>
                   <td>{v.metodo_pago || '-'}</td>
+                  <td>{ESTADOS[v.estado || 'pagado'] || v.estado}</td>
                   <td>{v.direccion ? 'Domicilio: ' + v.direccion : 'Tienda'}</td>
                   <td>{pesos(v.iva)}</td>
                   <td><b>{pesos(v.total)}</b></td>

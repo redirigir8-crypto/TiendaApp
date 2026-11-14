@@ -1,12 +1,13 @@
 // Pantalla de pago: resumen, envío, IVA y medio de pago (simulado)
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { comprar, usuarioGuardado } from '../db';
 import * as estado from '../estado';
 import { pesos } from '../factura';
 
-type Metodo = 'tarjeta' | 'transferencia' | 'nequi';
+type Metodo = 'tarjeta' | 'transferencia' | 'nequi' | 'bitcoin';
 
 // Datos de la cuenta para la transferencia (ficticios)
 const CUENTA = 'Banco Ejemplo · Ahorros 123-456789-00 · Tienda de Bicicletas';
@@ -51,6 +52,7 @@ export default function Pagar() {
   const textoMetodo = () => {
     if (metodo === 'tarjeta') return 'Tarjeta **** ' + numero.replace(/\D/g, '').slice(-4);
     if (metodo === 'nequi') return 'Nequi ' + celular;
+    if (metodo === 'bitcoin') return 'Bitcoin';
     return 'Transferencia (ref. ' + referencia + ')';
   };
 
@@ -59,17 +61,22 @@ export default function Pagar() {
     if (error) return Alert.alert('Revisa los datos', error);
     if (!usuario) return;
 
+    const bitcoin = metodo === 'bitcoin';
     setProcesando(true);
-    await new Promise((r) => setTimeout(r, 2000)); // simula que el banco procesa el pago
+    // Los pagos simulados "esperan al banco" 2 segundos. Bitcoin es real (OpenNode).
+    if (!bitcoin) await new Promise((r) => setTimeout(r, 2000));
     try {
       const venta = await comprar(usuario, {
         items, subtotal, iva, envio, total,
         direccion: domicilio ? direccion : '',
         metodo_pago: textoMetodo(),
+        bitcoin,
       });
       estado.setCarrito([]);
       estado.verComprobante(venta);
       router.replace('/comprobante');
+      // Bitcoin: abre la página de pago de OpenNode (QR / dirección)
+      if (bitcoin && venta.checkout_url) await WebBrowser.openBrowserAsync(venta.checkout_url);
     } catch (e: any) {
       Alert.alert('No se pudo completar la compra', e.message);
     }
@@ -80,7 +87,7 @@ export default function Pagar() {
     return (
       <View style={[estilos.pantalla, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#1e6fd9" />
-        <Text style={{ marginTop: 12 }}>Procesando pago...</Text>
+        <Text style={{ marginTop: 12 }}>{metodo === 'bitcoin' ? 'Creando cobro Bitcoin...' : 'Procesando pago...'}</Text>
       </View>
     );
   }
@@ -114,6 +121,7 @@ export default function Pagar() {
         <Opcion texto="💳 Tarjeta débito / crédito" activa={metodo === 'tarjeta'} onPress={() => setMetodo('tarjeta')} />
         <Opcion texto="🏦 Transferencia bancaria" activa={metodo === 'transferencia'} onPress={() => setMetodo('transferencia')} />
         <Opcion texto="📱 Nequi" activa={metodo === 'nequi'} onPress={() => setMetodo('nequi')} />
+        <Opcion texto="₿ Bitcoin" activa={metodo === 'bitcoin'} onPress={() => setMetodo('bitcoin')} />
 
         {metodo === 'tarjeta' && (
           <>
@@ -137,7 +145,17 @@ export default function Pagar() {
             <TextInput style={estilos.input} placeholder="Celular Nequi (10 dígitos)" keyboardType="number-pad" maxLength={10} value={celular} onChangeText={setCelular} />
           </>
         )}
-        <Text style={estilos.aviso}>Pago simulado: no se cobra dinero real.</Text>
+        {metodo === 'bitcoin' && (
+          <Text style={estilos.info}>
+            Se abrirá la página de pago de OpenNode con un código QR. Paga desde tu billetera Bitcoin
+            y vuelve a la app: el comprobante se actualiza solo.
+          </Text>
+        )}
+        <Text style={estilos.aviso}>
+          {metodo === 'bitcoin'
+            ? 'Modo pruebas: usa bitcoins de testnet (sin valor real).'
+            : 'Pago simulado: no se cobra dinero real.'}
+        </Text>
       </View>
 
       {/* ---------- Totales ---------- */}

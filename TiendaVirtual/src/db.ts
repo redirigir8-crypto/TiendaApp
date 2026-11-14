@@ -34,11 +34,14 @@ export type DatosCompra = {
   total: number;
   direccion: string; // vacío = recoge en tienda
   metodo_pago: string; // ej: "Tarjeta **** 1234", "Nequi 300...", "Transferencia"
+  bitcoin?: boolean; // true = pagar con Bitcoin (OpenNode)
 };
 export type Venta = DatosCompra & {
   id: number | string;
   fecha: string;
   pendiente?: boolean; // true = guardada en el celular, sin enviar
+  estado?: string; // pagado | pendiente_pago | expirado | cancelado
+  checkout_url?: string; // link para pagar con Bitcoin
 };
 
 // Error que devuelve el servidor (ej: "sin stock"). Se distingue de "no hay internet".
@@ -157,12 +160,19 @@ export async function comprar(usuario: Usuario, compra: DatosCompra): Promise<Ve
     return aVenta(v);
   } catch (e) {
     if (e instanceof ErrorServidor || !db) throw e;
+    if (compra.bitcoin) throw new Error('Necesitas internet para pagar con Bitcoin');
     const fecha = new Date().toISOString();
     const r = db.runSync('INSERT INTO compras_pendientes (datos, fecha) VALUES (?, ?)', [
       JSON.stringify(compra), fecha,
     ]);
     return { ...compra, id: 'P' + r.lastInsertRowId, fecha, pendiente: true };
   }
+}
+
+// Pregunta al servidor si una compra Bitcoin ya se pagó
+export async function estadoVenta(id: number | string): Promise<Venta> {
+  const res = await fetch(`${API}/ventas/${id}/estado`);
+  return aVenta(await res.json());
 }
 
 // Envía las compras que quedaron guardadas sin internet
