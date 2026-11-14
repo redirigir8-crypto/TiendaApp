@@ -1,12 +1,17 @@
 // =============================================
-//  Factura PDF (con código QR) y envío por correo SMTP (nodemailer)
+//  Factura PDF (con código QR) y envío por correo
 //
-//  Variables en Render:
-//    SMTP_HOST   ej: smtp-relay.brevo.com
-//    SMTP_PORT   ej: 2525   (Render gratis BLOQUEA 25, 465 y 587; el 2525 sí funciona)
-//    SMTP_USER   usuario SMTP (en Brevo: "SMTP & API" > pestaña SMTP > Login)
-//    SMTP_PASS   clave SMTP  (en Brevo: "Generate a new SMTP key")
-//    CORREO_TIENDA  correo remitente (verificado en Brevo)
+//  OPCIÓN A - GMAIL (recomendada en Render): usa la API de Gmail por HTTPS.
+//    Render gratis bloquea los puertos SMTP (25, 465, 587), pero HTTPS no.
+//    Variables en Render:
+//      GMAIL_USER           tu correo de Gmail (el que envía)
+//      GMAIL_CLIENT_ID      de Google Cloud (credencial OAuth)
+//      GMAIL_CLIENT_SECRET  de Google Cloud
+//      GMAIL_REFRESH_TOKEN  sacado del OAuth Playground (permiso gmail.send)
+//
+//  OPCIÓN B - SMTP (sirve en tu PC; en Render gratis solo con el puerto 2525):
+//      SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CORREO_TIENDA
+//      Gmail en tu PC: smtp.gmail.com, 587, tu correo, "contraseña de aplicación"
 // =============================================
 const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
@@ -67,16 +72,51 @@ function smtp() {
   return transporte;
 }
 
-// Envía la factura al correo del cliente. Si el SMTP no está configurado, solo avisa en el log.
+// ---------- Gmail por HTTPS ----------
+const usarGmail = () =>
+  process.env.GMAIL_USER && process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN;
+
+// Pide a Google un permiso temporal (access token) usando el refresh token
+async function tokenGmail() {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.GMAIL_CLIENT_ID,
+      client_secret: process.env.GMAIL_CLIENT_SECRET,
+      refresh_token: process.env.GMAIL_REFRESH_TOKEN,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error('Google: ' + (data.error_description || data.error));
+  return data.access_token;
+}
+
+// Envía un correo ya armado (formato MIME) con la API de Gmail
+async function enviarConGmail(correo) {
+  // nodemailer arma el correo completo (con el PDF adjunto) sin enviarlo
+  const armado = await nodemailer.createTransport({ streamTransport: true, buffer: true }).sendMail(correo);
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + (await tokenGmail()), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: armado.message.toString('base64url') }),
+  });
+  if (!res.ok) throw new Error('Gmail: ' + (await res.text()));
+}
+
+// Envía la factura al correo del cliente. Si no hay correo configurado, solo avisa en el log.
 async function enviarFactura(venta, cliente, urlFactura) {
-  const conexion = smtp();
-  if (!conexion) {
-    console.log('Correo no configurado (faltan SMTP_HOST, SMTP_USER o SMTP_PASS)');
+  const gmail = usarGmail();
+  const conexion = gmail ? null : smtp();
+  if (!gmail && !conexion) {
+    console.log('Correo no configurado (faltan las variables GMAIL_* o SMTP_*)');
     return;
   }
+  const remitente = gmail ? process.env.GMAIL_USER : process.env.CORREO_TIENDA || process.env.SMTP_USER;
   const pdf = await crearPdf(venta, cliente, urlFactura);
-  await conexion.sendMail({
-    from: `"Tienda de Bicicletas" <${process.env.CORREO_TIENDA || process.env.SMTP_USER}>`,
+  const correo = {
+    from: `"Tienda de Bicicletas" <${remitente}>`,
     to: `"${cliente.nombre}" <${cliente.email}>`,
     subject: `Tu factura N° ${venta.id} - Tienda de Bicicletas`,
     html: `
@@ -86,7 +126,9 @@ async function enviarFactura(venta, cliente, urlFactura) {
       <p>Adjuntamos tu factura en PDF. También puedes verla aquí:
         <a href="${urlFactura}">${urlFactura}</a></p>`,
     attachments: [{ filename: `factura-${venta.id}.pdf`, content: pdf }],
-  });
+  };
+  if (gmail) await enviarConGmail(correo);
+  else await conexion.sendMail(correo);
   console.log(`Factura ${venta.id} enviada a ${cliente.email}`);
 }
 
