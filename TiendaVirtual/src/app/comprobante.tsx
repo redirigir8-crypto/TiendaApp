@@ -2,8 +2,8 @@
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { estadoVenta, usuarioGuardado } from '../db';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { estadoVenta, simularPago, usuarioGuardado } from '../db';
 import * as estado from '../estado';
 import { descargarFactura, pesos } from '../factura';
 
@@ -25,6 +25,15 @@ export default function Comprobante() {
   if (!venta || !usuario) {
     return <Text style={{ padding: 20 }}>No hay comprobante para mostrar</Text>;
   }
+
+  // Monto en BTC (8 decimales) para mostrar y para el QR
+  const btc = ((venta.btc_satoshis ?? 0) / 100000000).toFixed(8);
+
+  const confirmarSimulado = () => {
+    simularPago(venta.id)
+      .then(setVenta)
+      .catch((e) => Alert.alert('No se pudo confirmar', e.message));
+  };
 
   const descargar = () => {
     descargarFactura(venta, usuario).catch((e) => Alert.alert('No se pudo crear el PDF', e.message));
@@ -49,6 +58,19 @@ export default function Comprobante() {
               <Pressable style={estilos.botonBitcoin} onPress={() => WebBrowser.openBrowserAsync(venta.checkout_url!)}>
                 <Text style={{ color: 'white', fontWeight: 'bold' }}>Abrir página de pago</Text>
               </Pressable>
+            )}
+            {/* Modo simulado: QR con la dirección y el monto + botón para confirmar */}
+            {!venta.checkout_url && !!venta.btc_direccion && (
+              <View style={estilos.cajaQr}>
+                <Image source={{ uri: urlQr(venta.btc_direccion, btc) }} style={{ width: 200, height: 200 }} />
+                <Text style={estilos.montoBtc}>{btc} BTC</Text>
+                <Text style={estilos.gris}>({venta.btc_satoshis} satoshis = {pesos(venta.total)})</Text>
+                <Text selectable style={estilos.direccion}>{venta.btc_direccion}</Text>
+                <Pressable style={estilos.botonBitcoin} onPress={confirmarSimulado}>
+                  <Text style={{ color: 'white', fontWeight: 'bold' }}>Simular pago confirmado</Text>
+                </Pressable>
+                <Text style={estilos.aviso}>Modo simulado: no se envían bitcoins reales.</Text>
+              </View>
             )}
           </>
         ) : fallido ? (
@@ -104,6 +126,12 @@ export default function Comprobante() {
   );
 }
 
+// Imagen del QR con el formato estándar de Bitcoin: bitcoin:<dirección>?amount=<BTC>
+function urlQr(direccion: string, btc: string) {
+  const datos = encodeURIComponent(`bitcoin:${direccion}?amount=${btc}`);
+  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${datos}`;
+}
+
 function Dato({ titulo, valor }: { titulo: string; valor: string }) {
   return (
     <View style={estilos.fila}>
@@ -118,6 +146,10 @@ const estilos = StyleSheet.create({
   encabezado: { alignItems: 'center', padding: 20 },
   estado: { fontSize: 22, fontWeight: 'bold', marginTop: 6, textAlign: 'center' },
   gris: { color: '#666', textAlign: 'center', marginTop: 4 },
+  cajaQr: { alignItems: 'center', marginTop: 12 },
+  montoBtc: { fontSize: 20, fontWeight: 'bold', color: '#f7931a', marginTop: 8 },
+  direccion: { fontSize: 12, color: '#444', marginTop: 6, textAlign: 'center' },
+  aviso: { color: '#999', fontSize: 12, marginTop: 8 },
   botonBitcoin: { backgroundColor: '#f7931a', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, marginTop: 12 },
   tarjeta: { backgroundColor: 'white', margin: 10, marginBottom: 0, padding: 14, borderRadius: 10 },
   titulo: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },

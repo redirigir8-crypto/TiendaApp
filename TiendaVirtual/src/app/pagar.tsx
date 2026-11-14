@@ -147,13 +147,13 @@ export default function Pagar() {
         )}
         {metodo === 'bitcoin' && (
           <Text style={estilos.info}>
-            Se abrirá la página de pago de OpenNode con un código QR. Paga desde tu billetera Bitcoin
-            y vuelve a la app: el comprobante se actualiza solo.
+            Verás un código QR con la dirección y el monto en BTC (al precio de hoy). Paga desde tu
+            billetera Bitcoin: el comprobante se actualiza solo cuando se confirme.
           </Text>
         )}
         <Text style={estilos.aviso}>
           {metodo === 'bitcoin'
-            ? 'Modo pruebas: usa bitcoins de testnet (sin valor real).'
+            ? 'Modo pruebas: no se cobran bitcoins reales.'
             : 'Pago simulado: no se cobra dinero real.'}
         </Text>
       </View>

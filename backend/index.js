@@ -54,6 +54,8 @@ async function init() {
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'pagado';
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS cobro_id TEXT;
     ALTER TABLE ventas ADD COLUMN IF NOT EXISTS checkout_url TEXT;
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS btc_direccion TEXT;
+    ALTER TABLE ventas ADD COLUMN IF NOT EXISTS btc_satoshis BIGINT;
   `);
 
   // Quitar los productos de prueba viejos (arroz, leche, pan)
@@ -220,8 +222,13 @@ app.post('/ventas', async (req, res) => {
       urlAviso: URL_PUBLICA ? URL_PUBLICA + '/webhook/opennode' : undefined,
     });
     const { rows } = await pool.query(
-      'UPDATE ventas SET cobro_id = $1, checkout_url = $2, metodo_pago = $3 WHERE id = $4 RETURNING *',
-      [cobro.id, cobro.checkout_url, `Bitcoin (${cobro.satoshis} sats)`, venta.id]
+      `UPDATE ventas SET cobro_id = $1, checkout_url = $2, metodo_pago = $3, btc_direccion = $4, btc_satoshis = $5
+       WHERE id = $6 RETURNING *`,
+      [
+        cobro.id, cobro.checkout_url,
+        `Bitcoin${pagos.SIMULADO ? ' (simulado)' : ''} - ${cobro.satoshis} sats`,
+        cobro.direccion, cobro.satoshis, venta.id,
+      ]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -246,6 +253,14 @@ app.get('/ventas/:id/estado', async (req, res) => {
   }
   const actual = await pool.query('SELECT * FROM ventas WHERE id = $1', [req.params.id]);
   res.json(actual.rows[0]);
+});
+
+// MODO SIMULADO: el botón "Simular pago confirmado" de la app llama aquí
+app.post('/ventas/:id/simular-pago', async (req, res) => {
+  if (!pagos.SIMULADO) return res.status(400).json({ error: 'Solo disponible en modo simulado' });
+  await marcarPagada(req.params.id);
+  const { rows } = await pool.query('SELECT * FROM ventas WHERE id = $1', [req.params.id]);
+  res.json(rows[0]);
 });
 
 // Aviso automático de OpenNode cuando cambia el estado de un cobro

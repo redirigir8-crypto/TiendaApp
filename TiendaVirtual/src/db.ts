@@ -41,7 +41,9 @@ export type Venta = DatosCompra & {
   fecha: string;
   pendiente?: boolean; // true = guardada en el celular, sin enviar
   estado?: string; // pagado | pendiente_pago | expirado | cancelado
-  checkout_url?: string; // link para pagar con Bitcoin
+  checkout_url?: string; // link para pagar con Bitcoin (OpenNode real)
+  btc_direccion?: string; // dirección Bitcoin a la que se paga
+  btc_satoshis?: number; // monto en satoshis (1 BTC = 100.000.000 sats)
 };
 
 // Error que devuelve el servidor (ej: "sin stock"). Se distingue de "no hay internet".
@@ -91,6 +93,7 @@ const aVenta = (v: any): Venta => ({
   total: Number(v.total),
   direccion: v.direccion ?? '',
   metodo_pago: v.metodo_pago ?? '',
+  btc_satoshis: v.btc_satoshis ? Number(v.btc_satoshis) : undefined,
 });
 
 // ---------- Sesión ----------
@@ -173,6 +176,11 @@ export async function comprar(usuario: Usuario, compra: DatosCompra): Promise<Ve
 export async function estadoVenta(id: number | string): Promise<Venta> {
   const res = await fetch(`${API}/ventas/${id}/estado`);
   return aVenta(await res.json());
+}
+
+// MODO SIMULADO: confirma el pago Bitcoin (botón "Simular pago confirmado")
+export async function simularPago(id: number | string): Promise<Venta> {
+  return aVenta(await post(`/ventas/${id}/simular-pago`, {}));
 }
 
 // Envía las compras que quedaron guardadas sin internet
