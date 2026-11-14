@@ -161,11 +161,17 @@ export async function cargarProductos(): Promise<Producto[]> {
 }
 
 // ---------- Ventas ----------
+// A la venta solo se mandan los datos necesarios de cada producto (sin las fotos, que pesan mucho)
+const soloDatos = (items: ItemCarrito[]) =>
+  items.map(({ id, nombre, precio, cantidad }) => ({ id, nombre, precio, cantidad }));
+
 // Intenta enviar la compra. Si no hay internet, la guarda en el celular.
 // Si el servidor la rechaza (ej: sin stock), lanza el error para mostrarlo.
 export async function comprar(usuario: Usuario, compra: DatosCompra): Promise<Venta> {
   try {
-    const v = await post('/ventas', { ...compra, usuario_id: usuario.id, cliente: usuario.nombre });
+    const v = await post('/ventas', {
+      ...compra, items: soloDatos(compra.items), usuario_id: usuario.id, cliente: usuario.nombre,
+    });
     return aVenta(v);
   } catch (e) {
     if (e instanceof ErrorServidor || !db) throw e;
